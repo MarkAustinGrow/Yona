@@ -1,7 +1,10 @@
 """
-Script to list all songs in the Supabase database.
+Script to list all songs stored in the Supabase database.
 """
 import os
+import json
+import asyncio
+import argparse
 from dotenv import load_dotenv
 from supabase import create_client
 import logging
@@ -13,68 +16,107 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-def list_songs():
-    """List all songs in the Supabase database."""
+async def list_songs(show_params=False, show_details=False):
+    """
+    List all songs from the Supabase database.
+    
+    Args:
+        show_params (bool): Whether to show all parameters for the most recent song
+        show_details (bool): Whether to show detailed information for all songs
+    """
+    logger.info("Listing songs from Supabase database...")
+    
     # Get Supabase credentials from environment variables
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
     
     if not supabase_url or not supabase_key:
         logger.error("Supabase credentials missing. Please check your .env file.")
-        return False
+        return
     
     try:
         # Initialize Supabase client
         supabase = create_client(supabase_url, supabase_key)
         logger.info("Supabase client initialized")
         
-        # Query all songs
+        # Get all songs from the database
         response = supabase.table("songs").select("*").execute()
         
+        # Check if the query was successful
         if hasattr(response, 'data'):
             songs = response.data
-            logger.info(f"Found {len(songs)} songs in the database")
+            logger.info(f"Found {len(songs)} songs in the database\n")
             
-            # Print song details
-            for i, song in enumerate(songs, 1):
-                print(f"\nSong {i}:")
+            # Display song information
+            for i, song in enumerate(songs):
+                print(f"Song {i+1}:")
                 print(f"  ID: {song.get('id')}")
                 print(f"  Title: {song.get('title')}")
                 print(f"  Audio URL: {song.get('audio_url')}")
                 print(f"  Created at: {song.get('created_at')}")
                 
-                # Print lyrics (first few lines)
-                if 'lyrics' in song and song['lyrics']:
-                    lyrics_lines = song['lyrics'].split('\n')
-                    print(f"  Lyrics (first 3 lines): ")
-                    for j in range(min(3, len(lyrics_lines))):
-                        if lyrics_lines[j].strip():
-                            print(f"    {lyrics_lines[j].strip()}")
+                # Display the first few lines of lyrics
+                lyrics = song.get('lyrics', '')
+                if lyrics:
+                    lines = lyrics.split('\n')[:3]
+                    print(f"  Lyrics (first 3 lines):")
+                    for line in lines:
+                        print(f"    {line}")
                 
-                # Extract additional details from params_used if available
-                if 'params_used' in song and song['params_used']:
-                    try:
-                        import json
-                        params = json.loads(song['params_used']) if isinstance(song['params_used'], str) else song['params_used']
-                        if 'duration' in params:
-                            print(f"  Duration: {params.get('duration')} seconds")
-                        if 'video_url' in params:
-                            print(f"  Video URL: {params.get('video_url')}")
-                        if 'image_url' in params:
-                            print(f"  Image URL: {params.get('image_url')}")
-                    except Exception as e:
-                        logger.error(f"Error parsing params_used: {str(e)}")
-                        print(f"  Raw params_used: {song['params_used'][:100]}...")
-            
-            return True
+                # Display dedicated columns
+                if song.get('duration'):
+                    print(f"  Duration: {song.get('duration')} seconds")
+                
+                if song.get('video_url'):
+                    print(f"  Video URL: {song.get('video_url')}")
+                    
+                if song.get('image_url'):
+                    print(f"  Image URL: {song.get('image_url')}")
+                
+                # Display additional details if requested
+                if show_details or (i == len(songs) - 1):  # Always show details for the most recent song
+                    print(f"  Style: {song.get('style', 'N/A')}")
+                    print(f"  Music Model: {song.get('mv', 'N/A')}")
+                    
+                    if song.get('make_instrumental'):
+                        print(f"  Instrumental: Yes")
+                    
+                    if song.get('gpt_description'):
+                        print(f"  Description: {song.get('gpt_description')}")
+                
+                # Show all parameters if requested (for backward compatibility)
+                if show_params and i == len(songs) - 1:  # Only for the most recent song
+                    params = song.get('params_used')
+                    if params:
+                        try:
+                            if isinstance(params, str):
+                                params_dict = json.loads(params)
+                            else:
+                                params_dict = params
+                                
+                            print("\nAll parameters used for the most recent song:")
+                            for key, value in params_dict.items():
+                                if key not in ['prompt', 'lyrics']:  # Skip long text fields
+                                    print(f"  {key}: {value}")
+                        except Exception as e:
+                            logger.error(f"Error parsing params_used: {str(e)}")
+                
+                print()
         else:
-            logger.error("No data returned from Supabase")
-            return False
-        
+            logger.error(f"Error listing songs: {response.error}")
+            
     except Exception as e:
-        logger.error(f"Error listing songs: {str(e)}")
-        return False
+        logger.error(f"Exception during song listing: {str(e)}")
+
+async def main():
+    """Main function to run the script."""
+    parser = argparse.ArgumentParser(description='List all songs stored in the Supabase database')
+    parser.add_argument('--show-params', action='store_true', help='Show all parameters for the most recent song')
+    parser.add_argument('--show-details', action='store_true', help='Show detailed information for all songs')
+    
+    args = parser.parse_args()
+    
+    await list_songs(args.show_params, args.show_details)
 
 if __name__ == "__main__":
-    logger.info("Listing songs from Supabase database...")
-    list_songs() 
+    asyncio.run(main()) 

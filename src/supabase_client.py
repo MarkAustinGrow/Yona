@@ -57,12 +57,32 @@ class SupabaseClient:
             return self._simulate_store_song(title, persona_id, lyrics, audio_url, params_used)
         
         try:
+            # Extract specific parameters for dedicated columns
+            style = params_used.get('style', '')
+            mv = params_used.get('mv', '')
+            negative_tags = params_used.get('negative_tags', '')
+            make_instrumental = params_used.get('make_instrumental', False)
+            gpt_description = params_used.get('gpt_description_prompt', '')
+            image_url = params_used.get('image_url', '')
+            video_url = params_used.get('video_url', '')
+            duration = params_used.get('duration', 0)
+            
             # Prepare the data to insert
             song_data = {
                 "title": title,
                 "persona_id": persona_id,
                 "lyrics": lyrics,
                 "audio_url": audio_url,
+                # Add dedicated columns
+                "style": style,
+                "mv": mv,
+                "negative_tags": negative_tags,
+                "make_instrumental": make_instrumental,
+                "gpt_description": gpt_description,
+                "image_url": image_url,
+                "video_url": video_url,
+                "duration": duration,
+                # Keep the original params for backward compatibility
                 "params_used": json.dumps(params_used)  # Convert dict to JSON string
             }
             
@@ -98,6 +118,16 @@ class SupabaseClient:
         """
         logger.info("Generating simulated Supabase response")
         
+        # Extract specific parameters for dedicated columns
+        style = params_used.get('style', '')
+        mv = params_used.get('mv', '')
+        negative_tags = params_used.get('negative_tags', '')
+        make_instrumental = params_used.get('make_instrumental', False)
+        gpt_description = params_used.get('gpt_description_prompt', '')
+        image_url = params_used.get('image_url', '')
+        video_url = params_used.get('video_url', '')
+        duration = params_used.get('duration', 0)
+        
         # Create a simulated response
         return {
             "id": "sim_song_id_12345",
@@ -105,6 +135,15 @@ class SupabaseClient:
             "persona_id": persona_id,
             "lyrics": lyrics,
             "audio_url": audio_url,
+            # Add dedicated columns
+            "style": style,
+            "mv": mv,
+            "negative_tags": negative_tags,
+            "make_instrumental": make_instrumental,
+            "gpt_description": gpt_description,
+            "image_url": image_url,
+            "video_url": video_url,
+            "duration": duration,
             "params_used": params_used,
             "created_at": "2023-06-15T12:00:00Z",
             "status": "simulated"
