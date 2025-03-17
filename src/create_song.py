@@ -1,5 +1,15 @@
 """
-Script to create a new song with all available parameters.
+Script to create a new song with all available parameters from Suno/MusicAPI.ai.
+
+Available parameters:
+- custom_mode: boolean (required) - If you want to customize the lyrics, this should be true
+- prompt: string (required) - Song lyrics, should be less than 3000 characters
+- title: string (optional) - Song title, should be less than 80 characters
+- tags/style: string (optional) - Song tags/style, should be less than 200 characters
+- negative_tags: string (optional) - Elements you want to avoid in your songs
+- mv: string (required) - Music model, which can be sonic-v3-5 or sonic-v4
+- make_instrumental: boolean (optional) - Instrumental mode
+- gpt_description_prompt: string (optional) - Description of the music
 """
 import os
 import json
@@ -58,7 +68,21 @@ async def store_song_data(title, persona_id, lyrics, audio_url, params_used):
         return None
 
 async def create_song(lyrics, title, style="kpop", mv="sonic-v3-5", negative_tags=None, make_instrumental=False, description=None):
-    """Create a new song with all available parameters."""
+    """
+    Create a new song with all available parameters.
+    
+    Args:
+        lyrics (str): Song lyrics or description, should be less than 3000 characters
+        title (str): Song title, should be less than 80 characters
+        style (str): Music style/tags, should be less than 200 characters (default: "kpop")
+        mv (str): Music model, either "sonic-v3-5" or "sonic-v4" (default: "sonic-v3-5")
+        negative_tags (str): Elements to avoid in the song (default: None)
+        make_instrumental (bool): Whether to create an instrumental version (default: False)
+        description (str): Description of the music for the GPT model (default: None)
+        
+    Returns:
+        dict: Song data if successful, None otherwise
+    """
     # Initialize MusicAPI
     music_api = MusicAPI(simulation_mode=False)
     
@@ -98,7 +122,7 @@ async def create_song(lyrics, title, style="kpop", mv="sonic-v3-5", negative_tag
                 status_result = music_api.get_song_status(task_id)
                 
                 # Continue polling if we get a pending status
-                if status_result.get("status") == "pending":
+                if status_result.get("status") == "pending" or status_result.get("status") == "running":
                     logger.info(f"Song is still being processed (attempt {attempt+1}/{max_attempts})...")
                     continue
                 
@@ -153,14 +177,14 @@ async def create_song(lyrics, title, style="kpop", mv="sonic-v3-5", negative_tag
 
 async def main():
     """Main function to run the script."""
-    parser = argparse.ArgumentParser(description='Create a new song with all available parameters')
-    parser.add_argument('--title', type=str, required=True, help='Title for the new song')
-    parser.add_argument('--lyrics', type=str, help='Lyrics for the new song')
-    parser.add_argument('--style', type=str, default='kpop', help='Style/tags for the new song')
-    parser.add_argument('--mv', type=str, default='sonic-v3-5', help='Music model to use (sonic-v3-5 or sonic-v4)')
+    parser = argparse.ArgumentParser(description='Create a new song with all available Suno/MusicAPI.ai parameters')
+    parser.add_argument('--title', type=str, required=True, help='Song title (< 80 characters)')
+    parser.add_argument('--lyrics', type=str, help='Song lyrics (< 3000 characters)')
+    parser.add_argument('--style', type=str, default='kpop', help='Music style/tags (< 200 characters)')
+    parser.add_argument('--mv', type=str, default='sonic-v3-5', choices=['sonic-v3-5', 'sonic-v4'], help='Music model')
     parser.add_argument('--negative-tags', type=str, help='Elements to avoid in the song')
     parser.add_argument('--instrumental', action='store_true', help='Create an instrumental version')
-    parser.add_argument('--description', type=str, help='Description of the music')
+    parser.add_argument('--description', type=str, help='Description of the music for the GPT model')
     parser.add_argument('--lyrics-file', type=str, help='Path to a file containing the lyrics')
     
     args = parser.parse_args()
@@ -180,6 +204,16 @@ async def main():
         parser.print_help()
         return
     
+    # Validate input lengths
+    if len(lyrics) > 3000:
+        logger.warning(f"Lyrics exceed 3000 characters ({len(lyrics)}). This may cause issues with the API.")
+    
+    if args.title and len(args.title) > 80:
+        logger.warning(f"Title exceeds 80 characters ({len(args.title)}). This may cause issues with the API.")
+    
+    if args.style and len(args.style) > 200:
+        logger.warning(f"Style/tags exceed 200 characters ({len(args.style)}). This may cause issues with the API.")
+    
     # Create the song
     result = await create_song(
         lyrics=lyrics,
@@ -194,6 +228,10 @@ async def main():
     if result:
         logger.info(f"Successfully created song: {result['title']} (ID: {result['id']})")
         logger.info(f"Audio URL: {result['audio_url']}")
+        if 'video_url' in result and result['video_url']:
+            logger.info(f"Video URL: {result['video_url']}")
+        if 'image_url' in result and result['image_url']:
+            logger.info(f"Image URL: {result['image_url']}")
     else:
         logger.error("Failed to create song")
 

@@ -32,6 +32,29 @@ An agentic AI K-pop star system that creates music using MusicAPI.ai and stores 
 python src/create_song.py --title "Song Title" --lyrics-file lyrics/your_lyrics.txt --style "kpop, electronic" --mv "sonic-v4"
 ```
 
+#### Available Parameters
+
+| Parameter | Description | Required | Default | Constraints |
+|-----------|-------------|----------|---------|-------------|
+| `--title` | Song title | Yes | - | < 80 characters |
+| `--lyrics` | Song lyrics | Yes* | - | < 3000 characters |
+| `--lyrics-file` | Path to a file containing lyrics | No | - | File must exist |
+| `--style` | Music style/tags | No | "kpop" | < 200 characters |
+| `--mv` | Music model | No | "sonic-v3-5" | "sonic-v3-5" or "sonic-v4" |
+| `--negative-tags` | Elements to avoid in the song | No | - | - |
+| `--instrumental` | Create an instrumental version | No | False | - |
+| `--description` | Description of the music for the GPT model | No | - | - |
+
+*Either `--lyrics` or `--lyrics-file` must be provided
+
+### Advanced Song Creation Example
+
+For a more comprehensive example that demonstrates all available parameters, see:
+
+```bash
+python src/examples/advanced_song_creation.py
+```
+
 ### Creating a Similar Song
 
 ```bash
@@ -52,8 +75,28 @@ python src/list_songs.py
   - `create_song.py`: Script for creating songs
   - `create_similar_song.py`: Script for creating similar songs
   - `list_songs.py`: Script for listing songs
+  - `examples/`: Example scripts
+    - `advanced_song_creation.py`: Comprehensive example with all parameters
 - `lyrics/`: Lyrics files
 - `config/`: Configuration files
+
+## MusicAPI.ai Parameters
+
+The MusicAPI.ai integration supports the following parameters:
+
+### Required Parameters
+
+- **custom_mode** (boolean): If you want to customize the lyrics, this should be true.
+- **prompt** (string): Song lyrics, should be less than 3000 characters.
+- **mv** (string): Music model, which can be "sonic-v3-5" or "sonic-v4".
+
+### Optional Parameters
+
+- **title** (string): Song title, should be less than 80 characters.
+- **tags/style** (string): Song tags/style, should be less than 200 characters.
+- **negative_tags** (string): Elements to avoid in the song
+- **make_instrumental** (boolean): Whether to create an instrumental version
+- **gpt_description_prompt** (string): Description of the music for the GPT model.
 
 ## Note
 
@@ -89,15 +132,6 @@ This project uses MusicAPI.ai for song generation. You'll need a valid API key t
    python src/main.py
    ```
 
-## Project Structure
-
-- `src/`: Source code
-  - `main.py`: Main application entry point
-  - `music_api.py`: MusicAPI.ai client
-  - `supabase_client.py`: Supabase client
-- `config/`: Configuration files
-- `tests/`: Test files
-
 ## API Integration Notes
 
 ### MusicAPI.ai
@@ -107,7 +141,7 @@ The MusicAPI.ai integration has been updated to match the latest API documentati
 1. **Song Creation Process**:
    - Send a POST request to `https://api.musicapi.ai/api/v1/sonic/create` with song details
    - Receive a `task_id` for the song generation task
-   - Poll the status endpoint `https://api.musicapi.ai/api/v1/sonic/music?task_id={task_id}` until the song is ready
+   - Poll the status endpoint `https://api.musicapi.ai/api/v1/sonic/task/{task_id}` until the song is ready
 
 2. **Required Parameters**:
    - `custom_mode`: Set to `true` for custom lyrics
@@ -116,9 +150,10 @@ The MusicAPI.ai integration has been updated to match the latest API documentati
 
 3. **Optional Parameters**:
    - `title`: Song title (< 80 characters)
-   - `tags`: Music style/genre
+   - `tags`: Music style/genre (< 200 characters)
    - `negative_tags`: Elements to avoid in the song
    - `make_instrumental`: Whether to create an instrumental version
+   - `gpt_description_prompt`: Description of the music for the GPT model
 
 **Important**: If you're experiencing issues with the MusicAPI.ai API, please note:
 1. The persona creation endpoint is currently unstable according to MusicAPI.ai support
