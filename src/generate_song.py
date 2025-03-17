@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """
-Song Creation Script for Yona
+Song Generation Script for Yona
 
-This script creates a new song using the MusicAPI with specified parameters.
+This script uses the YonaAgent to generate a song concept and lyrics from a simple prompt,
+then uses the MusicAPI to create the actual song.
 """
 import os
 import sys
@@ -10,14 +11,17 @@ import time
 import json
 import logging
 import argparse
+import tempfile
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config.config import MUSICAPI_KEY, YONA_PERSONA
+from src.agent import YonaAgent
 from src.music_api import MusicAPI
 from src.supabase_client import SupabaseClient
+from src.config.config import MUSICAPI_KEY, OPENAI_KEY
 
 # Configure logging
 logging.basicConfig(
@@ -26,33 +30,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def read_lyrics_file(file_path):
-    """Read lyrics from a file."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return file.read().strip()
-    except Exception as e:
-        logger.error(f"Error reading lyrics file: {str(e)}")
-        sys.exit(1)
-
 def parse_arguments():
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description='Create a new song using MusicAPI')
+    parser = argparse.ArgumentParser(description='Generate a song using YonaAgent and MusicAPI')
     
     # Required arguments
-    parser.add_argument('--title', required=True, help='Title of the song')
-    
-    # Content source (either lyrics file or prompt)
-    lyrics_group = parser.add_mutually_exclusive_group(required=True)
-    lyrics_group.add_argument('--lyrics-file', help='Path to a file containing the lyrics')
-    lyrics_group.add_argument('--prompt', help='Direct text prompt for song creation')
+    parser.add_argument('prompt', help='Prompt describing the song to create')
     
     # Optional arguments
-    parser.add_argument('--style', help='Style tags for the song (e.g., "kpop, electronic")')
+    parser.add_argument('--style', help='Additional style tags for the song (e.g., "kpop, electronic")')
     parser.add_argument('--mv', default='sonic-v4', help='Music video generation type')
     parser.add_argument('--negative-tags', help='Negative tags to avoid in generation')
     parser.add_argument('--instrumental', action='store_true', help='Make the song instrumental')
-    parser.add_argument('--description', help='Description prompt for the song')
     parser.add_argument('--voice-gender', default='female', help='Voice gender for the song')
     parser.add_argument('--max-attempts', type=int, default=60, help='Maximum number of status check attempts')
     parser.add_argument('--check-interval', type=int, default=30, help='Time in seconds between status checks')
@@ -60,55 +49,166 @@ def parse_arguments():
     
     return parser.parse_args()
 
+def generate_lyrics_from_concept(concept: Dict[str, Any], agent: YonaAgent) -> str:
+    """
+    Generate lyrics based on a song concept.
+    
+    Args:
+        concept: The song concept dictionary with title, theme, mood, etc.
+        agent: The YonaAgent instance to use for lyrics generation
+        
+    Returns:
+        The generated lyrics as a string
+    """
+    logger.info(f"Generating lyrics for concept: {concept['title']}")
+    
+    # Currently we're using a placeholder method in YonaAgent
+    # This would be expanded to actually generate lyrics based on the concept
+    lyrics = agent.generate_lyrics(concept)
+    
+    # If the agent doesn't have full lyrics generation implemented yet,
+    # create a basic structure based on the concept
+    if lyrics == "Placeholder lyrics based on the concept":
+        logger.info("Using basic lyrics template based on concept")
+        
+        title = concept.get('title', 'Untitled Song')
+        theme = concept.get('theme', 'Unknown theme')
+        mood = concept.get('mood', 'Neutral mood')
+        lyrics_concept = concept.get('lyrics_concept', 'No specific concept')
+        
+        # Create a simple template for the lyrics
+        lyrics = f"""[Verse 1]
+This is a song about {theme}
+With a {mood} feeling throughout
+{lyrics_concept}
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Verse 2]
+More details about {theme}
+Continuing the {mood} feeling
+Building on the concept further
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Bridge]
+A different perspective
+Or a deeper meaning
+About {theme}
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Outro]
+Final thoughts about {theme}
+"""
+    
+    return lyrics
+
 def main():
-    """Main function to create a song."""
+    """Main function to generate and create a song."""
     # Load environment variables
     load_dotenv()
     
     # Parse arguments
     args = parse_arguments()
     
-    # Get lyrics from file or prompt
-    lyrics = None
-    if args.lyrics_file:
-        lyrics = read_lyrics_file(args.lyrics_file)
-    else:
-        lyrics = args.prompt
+    # Check if required API keys are available
+    if not OPENAI_KEY and not args.simulation:
+        logger.warning("OpenAI API key is missing. Set OPENAI_KEY in .env or use --simulation")
     
-    # Prepare style tags
-    style_tags = args.style
+    if not MUSICAPI_KEY and not args.simulation:
+        logger.error("MusicAPI key is missing. Set MUSICAPI_KEY in .env or use --simulation")
+        return 1
     
-    # Add voice gender to tags
-    if args.voice_gender and style_tags:
-        style_tags = f"{style_tags}, {args.voice_gender} voice"
-    elif args.voice_gender:
-        style_tags = f"{args.voice_gender} voice"
-    
-    # Initialize MusicAPI client
-    music_api = MusicAPI(api_key=MUSICAPI_KEY, simulation_mode=args.simulation)
-    
-    # Create the song
-    logger.info(f"Creating new song: {args.title}")
+    # Initialize the agent
+    logger.info("Initializing YonaAgent")
+    agent = YonaAgent(simulation_mode=args.simulation)
     
     try:
+        # Generate song concept
+        logger.info(f"Generating song concept from prompt: {args.prompt}")
+        concept = agent.generate_song_concept(args.prompt)
+        
+        logger.info(f"Generated song concept: {json.dumps(concept, indent=2)}")
+        
+        # Extract the title
+        title = concept.get('title', 'Generated Song')
+        logger.info(f"Song title: {title}")
+        
+        # Generate lyrics based on the concept
+        lyrics = generate_lyrics_from_concept(concept, agent)
+        
+        # Save lyrics to a temporary file
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as temp_file:
+            temp_file.write(lyrics)
+            lyrics_file = temp_file.name
+        
+        logger.info(f"Lyrics saved to temporary file: {lyrics_file}")
+        
+        # Prepare style tags based on concept
+        style_tags = []
+        if args.style:
+            style_tags.append(args.style)
+        
+        # Add mood and theme to the style if available
+        if 'mood' in concept:
+            style_tags.append(concept['mood'])
+        if 'musical_elements' in concept:
+            style_tags.append(concept['musical_elements'])
+        
+        style = ", ".join(style_tags) if style_tags else None
+        
+        # Prepare description
+        description = f"A song about {concept.get('theme', 'the given theme')} with a {concept.get('mood', 'specific')} mood."
+        if 'lyrics_concept' in concept:
+            description += f" {concept['lyrics_concept']}"
+        
+        # Initialize MusicAPI
+        music_api = MusicAPI(simulation_mode=args.simulation)
+        
+        # Create the song
+        logger.info(f"Creating song: {title}")
         result = music_api.create_song(
             prompt=lyrics,
-            title=args.title,
-            style=style_tags,
+            title=title,
+            style=style,
             negative_tags=args.negative_tags,
             make_instrumental=args.instrumental,
             mv=args.mv,
-            gpt_description_prompt=args.description,
+            gpt_description_prompt=description[:199],  # Limit to 199 characters
             voice_gender=args.voice_gender
         )
         
+        # Clean up the temporary lyrics file
+        try:
+            os.unlink(lyrics_file)
+            logger.info("Temporary lyrics file deleted")
+        except:
+            logger.warning("Could not delete temporary lyrics file")
+        
+        if result.get('status') == 'failed':
+            logger.error(f"Failed to create song: {result.get('error')}")
+            return 1
+            
         logger.info(f"Song creation initiated: {result}")
         
         # Check song status until it's completed or failed
         task_id = result.get('task_id')
         if not task_id:
             logger.error("Failed to get task ID for song creation")
-            sys.exit(1)
+            return 1
         
         # Poll for song status
         logger.info(f"Checking status for task: {task_id}")
@@ -161,17 +261,19 @@ def main():
             
             # Prepare song data for storage
             song_data_for_db = {
-                'title': args.title,
+                'title': title,
                 'lyrics': lyrics,
-                'style': style_tags,
+                'style': style,
                 'audio_url': audio_url,
                 'video_url': video_url,
                 'image_url': image_url,
                 'make_instrumental': args.instrumental,
                 'mv': args.mv,
-                'gpt_description': args.description,
+                'gpt_description': description[:199],
                 'negative_tags': args.negative_tags,
                 'duration': duration,
+                'original_prompt': args.prompt,
+                'song_concept': json.dumps(concept),
                 'persona_id': 'direct_generation'  # Use direct_generation as we're not using a persona
             }
             
@@ -180,7 +282,7 @@ def main():
             
             if db_song_id:
                 logger.info(f"Song data stored in Supabase: {db_song_id}")
-                logger.info(f"Successfully created song: {args.title} (ID: {db_song_id})")
+                logger.info(f"Successfully created song: {title} (ID: {db_song_id})")
                 logger.info(f"Audio URL: {audio_url}")
                 logger.info(f"Video URL: {video_url}")
                 logger.info(f"Image URL: {image_url}")
@@ -200,8 +302,8 @@ def main():
             return 1
             
     except Exception as e:
-        logger.error(f"Error creating song: {str(e)}")
-        logger.error("Failed to create song")
+        logger.error(f"Error in song generation process: {str(e)}")
+        logger.exception("Exception details:")
         return 1
 
 if __name__ == "__main__":
