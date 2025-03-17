@@ -43,7 +43,7 @@ python src/create_song.py --title "Song Title" --lyrics-file lyrics/your_lyrics.
 | `--mv` | Music model | No | "sonic-v3-5" | "sonic-v3-5" or "sonic-v4" |
 | `--negative-tags` | Elements to avoid in the song | No | - | - |
 | `--instrumental` | Create an instrumental version | No | False | - |
-| `--description` | Description of the music for the GPT model | No | - | - |
+| `--description` | Description of the music for the GPT model | No | - | < 200 characters |
 
 *Either `--lyrics` or `--lyrics-file` must be provided
 
@@ -96,7 +96,7 @@ The MusicAPI.ai integration supports the following parameters:
 - **tags/style** (string): Song tags/style, should be less than 200 characters.
 - **negative_tags** (string): Elements to avoid in the song
 - **make_instrumental** (boolean): Whether to create an instrumental version
-- **gpt_description_prompt** (string): Description of the music for the GPT model.
+- **gpt_description_prompt** (string): Description of the music for the GPT model, should be less than 200 characters.
 
 ## Note
 

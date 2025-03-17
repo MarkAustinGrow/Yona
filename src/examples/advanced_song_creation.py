@@ -12,7 +12,7 @@ Available parameters:
 - negative_tags: string (optional) - Elements you want to avoid in your songs
 - mv: string (required) - Music model, which can be sonic-v3-5 or sonic-v4
 - make_instrumental: boolean (optional) - Instrumental version
-- gpt_description_prompt: string (optional) - Description of the music
+- gpt_description_prompt: string (optional) - Description of the music (< 200 characters)
 """
 import os
 import sys
@@ -89,17 +89,8 @@ async def create_advanced_song():
     make_instrumental = False
     
     # Detailed description for the GPT model to better understand the desired style
-    description = """
-    An energetic K-pop song with strong synthwave and electronic influences. 
-    The song should feature bright synths, a driving beat, and a futuristic atmosphere.
-    The vocals should be clear and powerful, with a catchy chorus that has an anthemic quality.
-    The production should be polished with modern electronic elements, including:
-    - Punchy electronic drums
-    - Arpeggiated synths
-    - Bright pad sounds
-    - A strong bass line
-    The song should have a positive, uplifting feel with a tempo around 120-130 BPM.
-    """
+    # Note: Must be less than 200 characters
+    description = "Energetic K-pop with synthwave influences. Features bright synths, driving beat, and futuristic atmosphere. Clear vocals with catchy chorus."
     
     # Create the song with all parameters
     logger.info(f"Creating advanced song: {title}")
