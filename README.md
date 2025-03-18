@@ -1,185 +1,124 @@
-# Yona AI K-pop Star System
+# Yona - Agentic AI K-pop Star
 
-An agentic AI K-pop star system that creates music using MusicAPI.ai and stores song data in Supabase.
+Yona is an agentic AI K-pop star system that can create songs, generate lyrics, and interact with users through natural language. It uses OpenAI for decision-making, MusicAPI.ai for song creation, and Supabase for data storage.
 
 ## Features
 
-- Creates K-pop songs via MusicAPI.ai
-- Stores song creation inputs and outputs in Supabase
-- Supports various song generation parameters
-- Includes utilities for creating similar songs based on previous ones
+- **Song Creation**: Create K-pop songs with custom lyrics and styles
+- **AI-Generated Lyrics**: Generate lyrics based on concepts or themes
+- **Agentic Interaction**: Interact with Yona using natural language
+- **Database Storage**: Store and retrieve songs from Supabase
 
 ## Setup
 
-1. Clone the repository
-2. Install dependencies:
+### Prerequisites
+
+- Python 3.8+
+- OpenAI API key
+- MusicAPI.ai API key
+- Supabase account and API keys
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd yona-cline
    ```
+
+2. Install dependencies:
+   ```bash
    pip install -r requirements.txt
    ```
-3. Create a `.env` file with the following variables:
+
+3. Create a `.env` file based on `.env.example`:
+   ```bash
+   cp .env.example .env
    ```
+
+4. Edit the `.env` file with your API keys:
+   ```
+   OPENAI_KEY=your_openai_api_key
    MUSICAPI_KEY=your_musicapi_key
-   OPENAI_KEY=your_openai_key
    SUPABASE_URL=your_supabase_url
    SUPABASE_KEY=your_supabase_key
    ```
 
 ## Usage
 
-### Creating a Song
+### Creating a Song with Lyrics
 
 ```bash
-python src/create_song.py --title "Song Title" --lyrics-file lyrics/your_lyrics.txt --style "kpop, electronic" --mv "sonic-v4"
+python src/create_song.py --title "My Song Title" --lyrics-file lyrics/my_lyrics.txt --style "kpop, electronic"
 ```
 
-#### Available Parameters
-
-| Parameter | Description | Required | Default | Constraints |
-|-----------|-------------|----------|---------|-------------|
-| `--title` | Song title | Yes | - | < 80 characters |
-| `--lyrics` | Song lyrics | Yes* | - | < 3000 characters |
-| `--lyrics-file` | Path to a file containing lyrics | No | - | File must exist |
-| `--style` | Music style/tags | No | "kpop" | < 200 characters |
-| `--mv` | Music model | No | "sonic-v3-5" | "sonic-v3-5" or "sonic-v4" |
-| `--negative-tags` | Elements to avoid in the song | No | - | - |
-| `--instrumental` | Create an instrumental version | No | False | - |
-| `--description` | Description of the music for the GPT model | No | - | < 200 characters |
-
-*Either `--lyrics` or `--lyrics-file` must be provided
-
-### Advanced Song Creation Example
-
-For a more comprehensive example that demonstrates all available parameters, see:
+### Generating a Song from a Concept
 
 ```bash
-python src/examples/advanced_song_creation.py
+python src/generate_song.py "Create an upbeat song about friendship and summer adventures"
 ```
 
-### Creating a Similar Song
+### Interactive Mode
 
 ```bash
-python src/create_similar_song.py --reference "song_id" --title "New Title" --lyrics "New lyrics"
+python src/yona_cli.py --interactive
 ```
 
-### Listing Songs
+This will start an interactive session where you can talk to Yona directly:
+
+```
+=================================================
+Welcome to Yona CLI!
+Yona is an agentic AI K-pop star that can create songs for you.
+=================================================
+
+You can ask Yona to:
+- Create a song (e.g., 'Create a song about friendship')
+- List your songs (e.g., 'List all my songs')
+- Get a specific song (e.g., 'Get song with ID 123')
+
+Type 'exit' or 'quit' to end the session.
+=================================================
+
+You: Create a song about skateboarding in the city
+```
+
+### Single Request Mode
 
 ```bash
-python src/list_songs.py
+python src/yona_cli.py --request "Create a song about the ocean"
+```
+
+### Simulation Mode
+
+For testing without making API calls:
+
+```bash
+python src/yona_cli.py --interactive --simulation
 ```
 
 ## Project Structure
 
-- `src/`: Source code
-  - `main.py`: Main entry point
-  - `music_api.py`: MusicAPI.ai integration
-  - `create_song.py`: Script for creating songs
-  - `create_similar_song.py`: Script for creating similar songs
+- `src/`: Main source code
+  - `agent.py`: YonaAgent implementation
+  - `music_api.py`: MusicAPI client
+  - `supabase_client.py`: Supabase client
+  - `create_song.py`: Script for creating songs with provided lyrics
+  - `generate_song.py`: Script for generating and creating songs
   - `list_songs.py`: Script for listing songs
-  - `examples/`: Example scripts
-    - `advanced_song_creation.py`: Comprehensive example with all parameters
-- `lyrics/`: Lyrics files
-- `config/`: Configuration files
+  - `yona_cli.py`: Interactive CLI for Yona
+  - `config/`: Configuration files
+- `tests/`: Test files
+- `lyrics/`: Example lyrics files
 
-## MusicAPI.ai Parameters
+## Testing
 
-The MusicAPI.ai integration supports the following parameters:
+Run the tests with:
 
-### Required Parameters
-
-- **custom_mode** (boolean): If you want to customize the lyrics, this should be true.
-- **prompt** (string): Song lyrics, should be less than 3000 characters.
-- **mv** (string): Music model, which can be "sonic-v3-5" or "sonic-v4".
-
-### Optional Parameters
-
-- **title** (string): Song title, should be less than 80 characters.
-- **tags/style** (string): Song tags/style, should be less than 200 characters.
-- **negative_tags** (string): Elements to avoid in the song
-- **make_instrumental** (boolean): Whether to create an instrumental version
-- **gpt_description_prompt** (string): Description of the music for the GPT model, should be less than 200 characters.
-
-## Note
-
-This project uses MusicAPI.ai for song generation. You'll need a valid API key to use the real API endpoints.
-
-## Current Status
-
-- **MusicAPI.ai Integration**: Updated to match the latest API documentation. The persona creation feature is currently unstable according to MusicAPI.ai support, so the system is configured to use direct song generation.
-- **OpenAI Integration**: Running in simulation mode to save API costs.
-- **Supabase Integration**: Ready for storing song data.
-
-## Setup Instructions
-
-1. Clone this repository
-2. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-3. Create a `.env` file with the following variables:
-   ```
-   # MusicAPI/Suno API Key
-   MUSICAPI_KEY=your_api_key_here
-   
-   # OpenAI API Key
-   OPENAI_KEY=your_openai_key_here
-   
-   # Supabase Credentials
-   SUPABASE_URL=your_supabase_url_here
-   SUPABASE_KEY=your_supabase_key_here
-   ```
-4. Run the application:
-   ```
-   python src/main.py
-   ```
-
-## API Integration Notes
-
-### MusicAPI.ai
-
-The MusicAPI.ai integration has been updated to match the latest API documentation:
-
-1. **Song Creation Process**:
-   - Send a POST request to `https://api.musicapi.ai/api/v1/sonic/create` with song details
-   - Receive a `task_id` for the song generation task
-   - Poll the status endpoint `https://api.musicapi.ai/api/v1/sonic/task/{task_id}` until the song is ready
-
-2. **Required Parameters**:
-   - `custom_mode`: Set to `true` for custom lyrics
-   - `prompt`: Song lyrics or description (< 3000 characters)
-   - `mv`: Music model to use (`sonic-v3-5` or `sonic-v4`)
-
-3. **Optional Parameters**:
-   - `title`: Song title (< 80 characters)
-   - `tags`: Music style/genre (< 200 characters)
-   - `negative_tags`: Elements to avoid in the song
-   - `make_instrumental`: Whether to create an instrumental version
-   - `gpt_description_prompt`: Description of the music for the GPT model
-
-**Important**: If you're experiencing issues with the MusicAPI.ai API, please note:
-1. The persona creation endpoint is currently unstable according to MusicAPI.ai support
-2. Make sure your API key is valid and not expired
-3. The API key should be provided as a Bearer token in the Authorization header
-
-### OpenAI
-
-The OpenAI integration is configured to run in simulation mode to save API costs. To use the real API:
-1. Ensure you have a valid OpenAI API key in your `.env` file
-2. Set `SIMULATE_OPENAI = False` in `src/main.py`
-
-### Supabase
-
-The Supabase integration is ready for storing song data. To use the real API:
-1. Ensure you have valid Supabase credentials in your `.env` file
-2. Initialize the SupabaseClient with `simulation_mode=False`
-
-## Troubleshooting
-
-If you encounter issues with the MusicAPI.ai API:
-1. Check if your API key is valid and not expired
-2. Ensure you're using the correct API endpoints and parameters
-3. Be aware that the persona creation feature is currently unstable
-4. Contact MusicAPI.ai support if issues persist
+```bash
+python -m unittest discover tests
+```
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+[MIT License](LICENSE)

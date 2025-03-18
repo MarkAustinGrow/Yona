@@ -1,215 +1,585 @@
+#!/usr/bin/env python
 """
-Yona agent implementation using ChatGPT as the brain.
+YonaAgent - Agentic AI K-pop Star
+
+This module implements the YonaAgent class, which serves as the brain for Yona,
+an agentic AI K-pop star. The agent uses OpenAI for decision-making and
+interfaces with MusicAPI and SupabaseClient to create and manage songs.
 """
 import os
 import json
-from openai import OpenAI
-from dotenv import load_dotenv
-from config.config import OPENAI_KEY, OPENAI_MODEL, YONA_PERSONA
+import logging
+import time
+from typing import Dict, Any, Optional, List, Union
 
-load_dotenv()
+import openai
+from openai import OpenAI
+
+from src.music_api import MusicAPI
+from src.supabase_client import SupabaseClient
+from src.config.config import OPENAI_KEY, OPENAI_MODEL, YONA_PERSONA
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class YonaAgent:
     """
-    Yona agent class that uses ChatGPT as its brain for decision-making.
+    YonaAgent is the brain of Yona, an agentic AI K-pop star.
+    
+    It uses OpenAI for decision-making and interfaces with MusicAPI and
+    SupabaseClient to create and manage songs.
     """
     
-    def __init__(self):
-        """Initialize the Yona agent."""
-        self.openai_key = OPENAI_KEY
-        self.model = OPENAI_MODEL
-        
-        if not self.openai_key:
-            print("Warning: OpenAI API key not found. Agent operations will be simulated.")
-            self.client = None
-        else:
-            self.client = OpenAI(api_key=self.openai_key)
-        
-        # Define Yona's persona from config
-        self.persona = YONA_PERSONA
-    
-    async def generate_song_concept(self, user_prompt):
+    def __init__(self, openai_api_key=None, simulation_mode=False):
         """
-        Generate a song concept based on user input.
+        Initialize the YonaAgent.
         
         Args:
-            user_prompt (str): The user's prompt for song creation
-        
-        Returns:
-            dict: A structured song concept
+            openai_api_key: API key for OpenAI. If None, uses OPENAI_KEY from config.
+            simulation_mode: If True, runs in simulation mode without making API calls.
         """
-        if not self.client:
-            # Simulate a response
-            print(f"Simulated: Generated song concept from prompt '{user_prompt}'")
+        self.simulation_mode = simulation_mode
+        
+        # Initialize OpenAI client
+        self.openai_api_key = openai_api_key or OPENAI_KEY
+        if not self.openai_api_key:
+            logger.warning("OpenAI API key not provided. Agent will run in limited mode.")
+        else:
+            self.openai_client = OpenAI(api_key=self.openai_api_key)
+        
+        # Initialize tool connections
+        self.music_api = MusicAPI(simulation_mode=simulation_mode)
+        self.supabase_client = SupabaseClient(simulation_mode=simulation_mode)
+        
+        # Set up agent parameters
+        self.persona = YONA_PERSONA
+        
+        logger.info("YonaAgent initialized")
+    
+    def generate_song_concept(self, prompt: str) -> Dict[str, Any]:
+        """
+        Generate a song concept based on a prompt.
+        
+        Args:
+            prompt: User prompt describing the song concept.
+            
+        Returns:
+            Dictionary containing the song concept with keys like title, theme, mood, etc.
+        """
+        logger.info(f"Generating song concept from prompt: {prompt}")
+        
+        if self.simulation_mode:
+            logger.info("Simulation mode: Returning mock song concept")
             return {
-                "title": "Simulated Song Title",
-                "theme": "love and friendship",
-                "mood": "upbeat",
-                "lyrics_concept": "A song about supporting friends through difficult times",
-                "musical_elements": ["EDM beats", "bright synths", "rap bridge"]
+                "title": "Simulated Song",
+                "theme": "Imagination",
+                "mood": "Upbeat",
+                "musical_elements": "Electronic, Pop",
+                "lyrics_concept": "A song about creating something from nothing"
             }
         
-        # Create a system message that defines Yona's role
-        system_message = f"""
-        You are Yona, a K-pop star AI agent. Your task is to create a song concept based on the user's prompt.
-        Your personality: {', '.join(self.persona['personality_traits'])}
-        Your musical style: {self.persona['style']} with {self.persona['description']}
-        
-        Generate a structured song concept with the following elements:
-        - title: A catchy title for the song
-        - theme: The main theme or topic
-        - mood: The emotional mood of the song
-        - lyrics_concept: A brief description of what the lyrics should convey
-        - musical_elements: A list of musical elements to include
-        
-        Format your response as a JSON object.
-        """
-        
-        # Call the OpenAI API
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format={"type": "json_object"}
-        )
-        
-        # Parse the response
-        concept = json.loads(response.choices[0].message.content)
-        return concept
+        try:
+            # Use OpenAI to generate a song concept
+            system_message = f"""
+            You are Yona, a K-pop songwriter. Generate a detailed song concept based on the user's prompt.
+            Return a JSON object with the following fields:
+            - title: The title of the song
+            - theme: The main theme or topic of the song
+            - mood: The emotional mood of the song
+            - musical_elements: Key musical elements or genre influences
+            - lyrics_concept: A brief description of what the lyrics should convey
+            
+            Your response should be ONLY the JSON object, nothing else.
+            """
+            
+            response = self.openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            
+            # Parse the response
+            concept_text = response.choices[0].message.content
+            concept = json.loads(concept_text)
+            
+            logger.info(f"Generated song concept: {json.dumps(concept, indent=2)}")
+            return concept
+            
+        except Exception as e:
+            logger.error(f"Error generating song concept: {str(e)}")
+            # Fallback to a basic concept
+            return {
+                "title": prompt[:30] + "...",
+                "theme": prompt,
+                "mood": "Neutral",
+                "musical_elements": "K-pop",
+                "lyrics_concept": prompt
+            }
     
-    async def generate_lyrics(self, song_concept):
+    def generate_lyrics(self, concept: Dict[str, Any]) -> str:
         """
         Generate lyrics based on a song concept.
         
         Args:
-            song_concept (dict): The song concept
-        
+            concept: Dictionary containing the song concept.
+            
         Returns:
-            str: The generated lyrics
+            String containing the generated lyrics.
         """
-        if not self.client:
-            # Simulate a response
-            print(f"Simulated: Generated lyrics for song concept '{song_concept['title']}'")
-            return "Simulated lyrics for the song\nVerse 1: ...\nChorus: ...\nVerse 2: ...\nBridge: ...\nChorus: ..."
+        logger.info(f"Generating lyrics for concept: {concept.get('title', 'Untitled')}")
         
-        # Create a system message for lyrics generation
-        system_message = f"""
-        You are Yona, a K-pop star AI agent. Your task is to write lyrics for a song based on the provided concept.
-        Your personality: {', '.join(self.persona['personality_traits'])}
-        Your musical style: {self.persona['style']} with {self.persona['description']}
+        if self.simulation_mode:
+            logger.info("Simulation mode: Returning mock lyrics")
+            return "This is a simulated song\nWith simulated lyrics\nFor a simulated world\n"
         
-        Write lyrics for a K-pop song with the following structure:
-        - Verse 1
-        - Pre-Chorus
-        - Chorus
-        - Verse 2
-        - Pre-Chorus
-        - Chorus
-        - Bridge (with rap elements)
-        - Final Chorus
-        
-        The lyrics should match the theme, mood, and concept provided.
-        """
-        
-        # Format the song concept as a prompt
-        user_prompt = f"""
-        Song Title: {song_concept['title']}
-        Theme: {song_concept['theme']}
-        Mood: {song_concept['mood']}
-        Lyrics Concept: {song_concept['lyrics_concept']}
-        Musical Elements: {', '.join(song_concept['musical_elements'])}
-        
-        Please write the complete lyrics for this song.
-        """
-        
-        # Call the OpenAI API
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        
-        # Get the lyrics from the response
-        lyrics = response.choices[0].message.content
-        return lyrics
+        try:
+            # Extract key elements from the concept
+            title = concept.get('title', 'Untitled')
+            theme = concept.get('theme', '')
+            mood = concept.get('mood', '')
+            lyrics_concept = concept.get('lyrics_concept', '')
+            
+            # Use OpenAI to generate lyrics
+            system_message = f"""
+            You are Yona, a K-pop songwriter. Generate lyrics for a song based on the provided concept.
+            The lyrics should be structured with verses, chorus, and optionally a bridge.
+            Make the lyrics creative, emotional, and fitting for a K-pop song.
+            
+            Your response should be ONLY the lyrics, nothing else.
+            """
+            
+            user_message = f"""
+            Song Title: {title}
+            Theme: {theme}
+            Mood: {mood}
+            Lyrics Concept: {lyrics_concept}
+            
+            Please generate complete lyrics for this song.
+            """
+            
+            response = self.openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            
+            # Get the lyrics from the response
+            lyrics = response.choices[0].message.content.strip()
+            
+            logger.info(f"Generated lyrics (excerpt): {lyrics[:100]}...")
+            return lyrics
+            
+        except Exception as e:
+            logger.error(f"Error generating lyrics: {str(e)}")
+            # Fallback to a template
+            title = concept.get('title', 'Untitled Song')
+            theme = concept.get('theme', 'Unknown theme')
+            mood = concept.get('mood', 'Neutral mood')
+            
+            return f"""[Verse 1]
+This is a song about {theme}
+With a {mood} feeling throughout
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Verse 2]
+More details about {theme}
+Continuing the {mood} feeling
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Bridge]
+A different perspective
+About {theme}
+
+[Chorus]
+{title}, {title}
+The main idea from the concept
+{title}, {title}
+Expressing the emotions intended
+
+[Outro]
+Final thoughts about {theme}
+"""
     
-    async def generate_music_prompt(self, song_concept, lyrics):
+    def create_song(self, title: str, lyrics: str, style: Optional[str] = None, 
+                   negative_tags: Optional[str] = None, make_instrumental: bool = False,
+                   mv: str = 'sonic-v4', gpt_description_prompt: Optional[str] = None,
+                   voice_gender: str = 'female', max_attempts: int = 60,
+                   check_interval: int = 30) -> Dict[str, Any]:
         """
-        Generate a prompt for MusicAPI.ai based on the song concept and lyrics.
+        Create a song using the MusicAPI.
         
         Args:
-            song_concept (dict): The song concept
-            lyrics (str): The generated lyrics
-        
+            title: Title of the song
+            lyrics: Lyrics for the song
+            style: Style tags for the song
+            negative_tags: Negative tags to avoid
+            make_instrumental: Whether to make the song instrumental
+            mv: Music video generation type
+            gpt_description_prompt: Description prompt for GPT
+            voice_gender: Voice gender for the song
+            max_attempts: Maximum number of status check attempts
+            check_interval: Time in seconds between status checks
+            
         Returns:
-            dict: A structured prompt for MusicAPI.ai
+            Dictionary containing the song data, including URLs and metadata.
         """
-        if not self.client:
-            # Simulate a response
-            print(f"Simulated: Generated music prompt for song '{song_concept['title']}'")
+        logger.info(f"Creating song: {title}")
+        
+        if self.simulation_mode:
+            logger.info("Simulation mode: Returning mock song data")
             return {
-                "prompt": f"Create an energetic K-pop song titled '{song_concept['title']}' about {song_concept['theme']}",
-                "style": "kpop",
-                "parameters": {
-                    "tempo": 120,
-                    "duration": 180
+                "title": title,
+                "audio_url": "https://example.com/simulated-audio.mp3",
+                "video_url": "https://example.com/simulated-video.mp4",
+                "image_url": "https://example.com/simulated-image.jpg",
+                "status": "succeeded"
+            }
+        
+        try:
+            # Create the song using MusicAPI
+            result = self.music_api.create_song(
+                prompt=lyrics,
+                title=title,
+                style=style,
+                negative_tags=negative_tags,
+                make_instrumental=make_instrumental,
+                mv=mv,
+                gpt_description_prompt=gpt_description_prompt[:199] if gpt_description_prompt else None,
+                voice_gender=voice_gender
+            )
+            
+            if result.get('status') == 'failed':
+                logger.error(f"Failed to create song: {result.get('error')}")
+                return result
+                
+            logger.info(f"Song creation initiated: {result}")
+            
+            # Check song status until it's completed or failed
+            task_id = result.get('task_id')
+            if not task_id:
+                logger.error("Failed to get task ID for song creation")
+                return {"status": "failed", "error": "No task ID returned"}
+            
+            # Poll for song status
+            logger.info(f"Checking status for task: {task_id}")
+            status = "pending"
+            attempt = 1
+            song_data = None
+            
+            while status != "succeeded" and status != "failed" and attempt <= max_attempts:
+                logger.info(f"Checking song status (attempt {attempt}/{max_attempts})...")
+                status_response = self.music_api.check_song_status(task_id)
+                
+                # Get the first item in the data array (assuming it's the main song)
+                if status_response and 'data' in status_response and len(status_response['data']) > 0:
+                    song_data = status_response['data'][0]
+                    status = song_data.get('state', 'unknown')
+                    
+                    # If we have audio_url but status is still pending, we can proceed
+                    if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                        logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                        status = "succeeded"
+                
+                if status not in ["succeeded", "failed"]:
+                    logger.info(f"Song is still being processed (attempt {attempt}/{max_attempts})...")
+                    attempt += 1
+                    time.sleep(check_interval)  # Wait between checks
+            
+            if status == "succeeded" or (status == "pending" and song_data and song_data.get('audio_url')):
+                logger.info(f"Song status: {status}")
+                
+                # Extract data from the response
+                audio_url = song_data.get('audio_url', '')
+                video_url = song_data.get('video_url', '')
+                image_url = song_data.get('image_url', '')
+                duration = song_data.get('duration', 0)
+                
+                logger.info(f"Audio URL: {audio_url}")
+                
+                # Prepare song data for storage
+                song_data_for_db = {
+                    'title': title,
+                    'lyrics': lyrics,
+                    'style': style,
+                    'audio_url': audio_url,
+                    'video_url': video_url,
+                    'image_url': image_url,
+                    'make_instrumental': make_instrumental,
+                    'mv': mv,
+                    'gpt_description': gpt_description_prompt[:199] if gpt_description_prompt else None,
+                    'negative_tags': negative_tags,
+                    'duration': duration,
+                    'persona_id': 'direct_generation'  # Use direct_generation as we're not using a persona
                 }
+                
+                # Store song data in Supabase
+                db_song_id = self.supabase_client.store_song_data(song_data_for_db)
+                
+                if db_song_id:
+                    logger.info(f"Song data stored in Supabase: {db_song_id}")
+                    song_data_for_db['id'] = db_song_id
+                    song_data_for_db['status'] = status
+                    return song_data_for_db
+                else:
+                    logger.warning("Failed to store song data in Supabase")
+                    song_data['status'] = status
+                    return song_data
+                
+            else:
+                logger.error(f"Song creation failed with status: {status}")
+                if song_data and 'error' in song_data:
+                    error_details = song_data['error']
+                else:
+                    error_details = "Song creation timed out or failed without error details"
+                
+                return {
+                    "status": "failed",
+                    "error": error_details,
+                    "last_data": song_data
+                }
+                
+        except Exception as e:
+            logger.error(f"Error in song creation process: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e)
             }
+    
+    def list_songs(self, limit: int = 10, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        List songs from the database.
         
-        # Create a system message for music prompt generation
-        system_message = f"""
-        You are Yona, a K-pop star AI agent. Your task is to create a prompt for MusicAPI.ai to generate music.
-        Your personality: {', '.join(self.persona['personality_traits'])}
-        Your musical style: {self.persona['style']} with {self.persona['description']}
+        Args:
+            limit: Maximum number of songs to return
+            offset: Offset for pagination
+            
+        Returns:
+            List of dictionaries containing song data
+        """
+        logger.info(f"Listing songs (limit: {limit}, offset: {offset})")
         
-        Based on the song concept and lyrics, create a detailed prompt for MusicAPI.ai.
-        The prompt should include:
-        - A clear description of the desired musical style and elements
-        - References to the mood and theme
-        - Specific musical elements to include (e.g., EDM beats, synths, etc.)
+        if self.simulation_mode:
+            logger.info("Simulation mode: Returning mock song list")
+            return [
+                {
+                    "id": "sim-1",
+                    "title": "Simulated Song 1",
+                    "audio_url": "https://example.com/sim1.mp3"
+                },
+                {
+                    "id": "sim-2",
+                    "title": "Simulated Song 2",
+                    "audio_url": "https://example.com/sim2.mp3"
+                }
+            ]
         
-        Also determine appropriate parameters:
-        - tempo: The tempo of the song in BPM
-        - duration: The duration of the song in seconds
+        try:
+            # Get songs from Supabase
+            songs = self.supabase_client.list_songs(limit=limit, offset=offset)
+            logger.info(f"Retrieved {len(songs)} songs from database")
+            return songs
+        except Exception as e:
+            logger.error(f"Error listing songs: {str(e)}")
+            return []
+    
+    def process_user_request(self, user_input: str) -> Dict[str, Any]:
+        """
+        Process a natural language request from the user and take appropriate action.
         
-        Format your response as a JSON object with the following structure:
-        {
-            "prompt": "The detailed prompt for MusicAPI.ai",
-            "style": "The style of the song (e.g., kpop)",
-            "parameters": {
-                "tempo": 120,
-                "duration": 180
+        Args:
+            user_input: String containing the user's request
+            
+        Returns:
+            Dictionary with results and response
+        """
+        logger.info(f"Processing user request: {user_input}")
+        
+        try:
+            # Use OpenAI to analyze the request
+            analysis = self._analyze_request(user_input)
+            
+            # Determine the intent and extract parameters
+            intent = analysis.get('intent')
+            params = analysis.get('parameters', {})
+            
+            logger.info(f"Detected intent: {intent}")
+            logger.info(f"Extracted parameters: {json.dumps(params, indent=2)}")
+            
+            # Execute the appropriate action based on intent
+            if intent == 'create_song':
+                # Generate concept if not provided
+                if 'concept' not in params:
+                    concept = self.generate_song_concept(params.get('prompt', user_input))
+                else:
+                    concept = params['concept']
+                    
+                # Generate lyrics if not provided
+                if 'lyrics' not in params:
+                    lyrics = self.generate_lyrics(concept)
+                else:
+                    lyrics = params['lyrics']
+                    
+                # Create the song
+                result = self.create_song(
+                    title=concept.get('title'),
+                    lyrics=lyrics,
+                    style=params.get('style'),
+                    negative_tags=params.get('negative_tags'),
+                    make_instrumental=params.get('make_instrumental', False),
+                    mv=params.get('mv', 'sonic-v4'),
+                    gpt_description_prompt=params.get('description'),
+                    voice_gender=params.get('voice_gender', 'female')
+                )
+                
+                if result.get('status') == 'failed':
+                    return {
+                        'action': 'create_song',
+                        'result': result,
+                        'response': f"I couldn't create the song. Error: {result.get('error')}"
+                    }
+                
+                return {
+                    'action': 'create_song',
+                    'result': result,
+                    'response': f"I've created a song titled '{concept.get('title')}'. You can listen to it at {result.get('audio_url')}"
+                }
+                
+            elif intent == 'list_songs':
+                # Retrieve songs from database
+                songs = self.list_songs(limit=params.get('limit', 10), offset=params.get('offset', 0))
+                
+                song_list_text = "\n".join([f"- {song.get('title')}: {song.get('audio_url')}" for song in songs])
+                
+                return {
+                    'action': 'list_songs',
+                    'result': songs,
+                    'response': f"I found {len(songs)} songs in the database:\n{song_list_text}"
+                }
+            
+            elif intent == 'get_song':
+                # Get a specific song by ID
+                song_id = params.get('song_id')
+                if not song_id:
+                    return {
+                        'action': 'get_song',
+                        'result': None,
+                        'response': "I need a song ID to retrieve a specific song."
+                    }
+                
+                song = self.supabase_client.get_song_by_id(song_id)
+                
+                if not song:
+                    return {
+                        'action': 'get_song',
+                        'result': None,
+                        'response': f"I couldn't find a song with ID {song_id}."
+                    }
+                
+                return {
+                    'action': 'get_song',
+                    'result': song,
+                    'response': f"Here's the song '{song.get('title')}'. You can listen to it at {song.get('audio_url')}"
+                }
+            
+            else:
+                return {
+                    'action': 'unknown',
+                    'result': None,
+                    'response': "I'm not sure how to help with that request. You can ask me to create a song, list songs, or get a specific song."
+                }
+                
+        except Exception as e:
+            logger.error(f"Error processing user request: {str(e)}")
+            return {
+                'action': 'error',
+                'result': None,
+                'response': f"I encountered an error while processing your request: {str(e)}"
             }
-        }
+    
+    def _analyze_request(self, user_input: str) -> Dict[str, Any]:
+        """
+        Analyze a user request to determine intent and extract parameters.
+        
+        Args:
+            user_input: String containing the user's request
+            
+        Returns:
+            Dictionary with intent and parameters
+        """
+        # In simulation mode, use a simple rule-based approach
+        if self.simulation_mode:
+            # Basic intent detection based on keywords
+            if "create" in user_input.lower() and "song" in user_input.lower():
+                return {"intent": "create_song", "parameters": {"prompt": user_input}}
+            elif "list" in user_input.lower() and "song" in user_input.lower():
+                return {"intent": "list_songs", "parameters": {"limit": 10}}
+            elif "get" in user_input.lower() and "song" in user_input.lower():
+                # Try to extract an ID if present
+                import re
+                id_match = re.search(r'id\s+(\w+)', user_input.lower())
+                song_id = id_match.group(1) if id_match else None
+                return {"intent": "get_song", "parameters": {"song_id": song_id}}
+            else:
+                return {"intent": "unknown", "parameters": {}}
+        
+        # For non-simulation mode, use OpenAI
+        system_message = """
+        You are an assistant that analyzes user requests and extracts structured information.
+        Determine the user's intent and extract relevant parameters.
+        
+        Possible intents:
+        - create_song: User wants to create a new song
+        - list_songs: User wants to list existing songs
+        - get_song: User wants to retrieve a specific song
+        
+        Return a JSON object with:
+        - intent: The detected intent
+        - parameters: An object containing extracted parameters
+        
+        Your response should be ONLY the JSON object, nothing else.
         """
         
-        # Format the song concept and lyrics as a prompt
-        user_prompt = f"""
-        Song Title: {song_concept['title']}
-        Theme: {song_concept['theme']}
-        Mood: {song_concept['mood']}
-        Musical Elements: {', '.join(song_concept['musical_elements'])}
-        
-        Lyrics:
-        {lyrics[:500]}... (truncated for brevity)
-        
-        Please create a detailed prompt for MusicAPI.ai to generate this song.
-        """
-        
-        # Call the OpenAI API
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
-            ],
-            response_format={"type": "json_object"}
-        )
-        
-        # Parse the response
-        music_prompt = json.loads(response.choices[0].message.content)
-        return music_prompt 
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_input}
+                ]
+            )
+            
+            # Parse the response
+            analysis_text = response.choices[0].message.content
+            analysis = json.loads(analysis_text)
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"Error analyzing request: {str(e)}")
+            # Fallback to a basic analysis
+            if "create" in user_input.lower() and "song" in user_input.lower():
+                return {"intent": "create_song", "parameters": {"prompt": user_input}}
+            elif "list" in user_input.lower() and "song" in user_input.lower():
+                return {"intent": "list_songs", "parameters": {}}
+            else:
+                return {"intent": "unknown", "parameters": {}}

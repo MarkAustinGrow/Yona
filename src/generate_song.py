@@ -62,57 +62,9 @@ def generate_lyrics_from_concept(concept: Dict[str, Any], agent: YonaAgent) -> s
     """
     logger.info(f"Generating lyrics for concept: {concept['title']}")
     
-    # Currently we're using a placeholder method in YonaAgent
-    # This would be expanded to actually generate lyrics based on the concept
+    # Use the agent to generate lyrics based on the concept
     lyrics = agent.generate_lyrics(concept)
-    
-    # If the agent doesn't have full lyrics generation implemented yet,
-    # create a basic structure based on the concept
-    if lyrics == "Placeholder lyrics based on the concept":
-        logger.info("Using basic lyrics template based on concept")
-        
-        title = concept.get('title', 'Untitled Song')
-        theme = concept.get('theme', 'Unknown theme')
-        mood = concept.get('mood', 'Neutral mood')
-        lyrics_concept = concept.get('lyrics_concept', 'No specific concept')
-        
-        # Create a simple template for the lyrics
-        lyrics = f"""[Verse 1]
-This is a song about {theme}
-With a {mood} feeling throughout
-{lyrics_concept}
-
-[Chorus]
-{title}, {title}
-The main idea from the concept
-{title}, {title}
-Expressing the emotions intended
-
-[Verse 2]
-More details about {theme}
-Continuing the {mood} feeling
-Building on the concept further
-
-[Chorus]
-{title}, {title}
-The main idea from the concept
-{title}, {title}
-Expressing the emotions intended
-
-[Bridge]
-A different perspective
-Or a deeper meaning
-About {theme}
-
-[Chorus]
-{title}, {title}
-The main idea from the concept
-{title}, {title}
-Expressing the emotions intended
-
-[Outro]
-Final thoughts about {theme}
-"""
+    logger.info(f"Generated lyrics (excerpt): {lyrics[:100]}...")
     
     return lyrics
 
@@ -307,4 +259,4 @@ def main():
         return 1
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

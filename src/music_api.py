@@ -1,379 +1,372 @@
 """
-Integration with MusicAPI.ai for creating music.
+MusicAPI - Client for interacting with MusicAPI.ai service.
 """
 import os
 import json
-import httpx
-from dotenv import load_dotenv
-from config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL, DEFAULT_SONG_PARAMETERS
-import asyncio
-import requests
+import time
 import logging
+import httpx
+from typing import Dict, Any, Optional, List, Union
+
+from src.config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load environment variables
-load_dotenv()
-
 class MusicAPI:
-    """Class for interacting with MusicAPI.ai."""
+    """
+    Client for the MusicAPI.ai service that handles song and persona creation.
+    """
     
-    def __init__(self, simulation_mode=False):
-        """Initialize the MusicAPI client."""
-        # Get API key directly from environment variables
-        self.api_key = os.getenv("MUSICAPI_KEY")
-        self.base_url = "https://api.musicapi.ai"
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, simulation_mode: bool = False):
+        """
+        Initialize the MusicAPI client.
+        
+        Args:
+            api_key: API key for MusicAPI.ai (defaults to environment variable)
+            base_url: Base URL for the API (defaults to the standard MusicAPI URL)
+            simulation_mode: If True, will simulate responses instead of calling the API
+        """
+        self.api_key = api_key or MUSICAPI_KEY
+        self.base_url = base_url or MUSICAPI_BASE_URL
         self.simulation_mode = simulation_mode
         
+        # Validate API key
+        if not self.api_key and not simulation_mode:
+            logger.warning("MusicAPI key is missing! Using simulation mode.")
+            self.simulation_mode = True
+        
         # Log initialization
-        if simulation_mode:
+        if self.simulation_mode:
             logger.info("MusicAPI initialized in simulation mode")
         else:
             logger.info(f"MusicAPI initialized with live API (key: {self.api_key[:5]}...)")
-            
-        # Note about persona creation
-        logger.info("NOTE: Persona creation is currently unstable according to MusicAPI support")
-        logger.info("Using direct song generation without persona")
-        
-        if not self.api_key:
-            logger.error("MusicAPI key not found in environment variables!")
-            raise ValueError("MusicAPI key not found. Please check your .env file.")
+            logger.info("NOTE: Persona creation is currently unstable according to MusicAPI support")
+            logger.info("Using direct song generation without persona")
     
-    def create_song(self, prompt, style="kpop", title=None, negative_tags=None, make_instrumental=False, mv="sonic-v3-5", gpt_description_prompt=None):
+    def _get_headers(self) -> Dict[str, str]:
         """
-        Create a song directly using the MusicAPI.ai API
+        Get the headers for API requests.
+        
+        Returns:
+            Dictionary with Content-Type and Authorization headers
+        """
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.api_key}'
+        }
+    
+    def create_song(
+        self,
+        prompt: str,
+        title: Optional[str] = None,
+        style: Optional[str] = None,
+        negative_tags: Optional[str] = None,
+        make_instrumental: bool = False,
+        mv: str = 'sonic-v4',
+        gpt_description_prompt: Optional[str] = None,
+        voice_gender: str = 'female'
+    ) -> Dict[str, Any]:
+        """
+        Create a song using MusicAPI.
         
         Args:
-            prompt (str): Lyrics or description for the song (< 3000 chars)
-            style (str): Music style/tags (default: kpop)
-            title (str, optional): Song title (< 80 chars)
-            negative_tags (str, optional): Elements to avoid in the song
-            make_instrumental (bool, optional): Whether to create an instrumental
-            mv (str): Music model to use (sonic-v3-5 or sonic-v4)
-            gpt_description_prompt (str, optional): Description of the music
+            prompt: Lyrics or prompt for the song
+            title: Song title
+            style: Style tags (comma separated)
+            negative_tags: Tags to avoid in generation
+            make_instrumental: Whether to make an instrumental version
+            mv: Music video generation type
+            gpt_description_prompt: Description prompt for the song
+            voice_gender: Voice gender for the song (female or male)
             
         Returns:
-            dict: Response from the API or simulated response
+            Dictionary with task_id, message, and status
         """
         if self.simulation_mode:
-            logger.info(f"SIMULATION: Creating song with prompt: {prompt}")
-            return self._simulate_song_creation(prompt, style, title, mv)
+            logger.info("Simulation mode - returning mock response")
+            return {
+                'task_id': 'simulated-task-id',
+                'message': 'Song creation task initiated successfully (simulated)',
+                'status': 'pending'
+            }
         
-        # Prepare the payload according to the API documentation
-        payload = {
-            "custom_mode": True,
-            "prompt": prompt,
-            "mv": mv,
-            "make_instrumental": make_instrumental
-        }
-        
-        # Add optional parameters
-        if title:
-            payload["title"] = title
-        
-        if style:
-            payload["tags"] = style
-            
-        if negative_tags:
-            payload["negative_tags"] = negative_tags
-            
-        if gpt_description_prompt:
-            payload["gpt_description_prompt"] = gpt_description_prompt
-        
-        # Prepare headers with API key
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-        
-        # Log the request
+        # Log the prompt
         logger.info(f"Creating song with prompt: {prompt[:100]}...")
+        
+        # Prepare headers
+        headers = self._get_headers()
         logger.info(f"Using API key: {self.api_key}")
         logger.info(f"Headers: {headers}")
+        
+        # Prepare payload
+        payload = {
+            'custom_mode': True,
+            'prompt': prompt,
+            'mv': mv,
+            'make_instrumental': make_instrumental
+        }
+        
+        # Add optional parameters if provided
+        if title:
+            payload['title'] = title
+            
+        # Add style tags and voice gender
+        if style:
+            # Check if voice_gender is already included in style
+            if voice_gender and f"{voice_gender} voice" not in style.lower():
+                payload['tags'] = f"{style}, {voice_gender} voice"
+            else:
+                payload['tags'] = style
+        elif voice_gender:
+            payload['tags'] = f"{voice_gender} voice"
+            
+        if negative_tags:
+            payload['negative_tags'] = negative_tags
+            
+        if gpt_description_prompt:
+            # Limit length to avoid 400 error
+            if gpt_description_prompt and len(gpt_description_prompt) > 199:
+                gpt_description_prompt = gpt_description_prompt[:199]
+            payload['gpt_description_prompt'] = gpt_description_prompt
+        
+        # Log the payload
         logger.info(f"Payload: {payload}")
         
+        # Make the API request
+        url = f"{self.base_url}/api/v1/sonic/create"
+        logger.info(f"Sending request to: {url}")
+        
         try:
-            # Make the API request to the correct endpoint
-            endpoint = f"{self.base_url}/api/v1/sonic/create"
-            logger.info(f"Sending request to: {endpoint}")
-            
-            response = requests.post(
-                endpoint,
-                json=payload,
-                headers=headers
-            )
-            
-            # Log the response status
+            response = httpx.post(url, json=payload, headers=headers)
             logger.info(f"Song creation response status: {response.status_code}")
             logger.info(f"Response text: {response.text}")
             
-            # Check if the request was successful
             if response.status_code == 200:
-                result = response.json()
-                task_id = result.get("task_id")
+                response_data = response.json()
+                task_id = response_data.get('task_id')
+                logger.info(f"Song creation task initiated with ID: {task_id}")
                 
-                if task_id:
-                    logger.info(f"Song creation task initiated with ID: {task_id}")
-                    return {
-                        "task_id": task_id,
-                        "message": "Song creation task initiated successfully",
-                        "status": "pending"
-                    }
-                else:
-                    logger.error("No task_id in response")
-                    return {"error": "No task_id in response", "status": response.status_code}
+                return {
+                    'task_id': task_id,
+                    'message': 'Song creation task initiated successfully',
+                    'status': 'pending'
+                }
             else:
                 logger.error(f"Error creating song: {response.text}")
-                return {"error": response.text, "status": response.status_code}
+                return {
+                    'error': response.text,
+                    'status': 'failed'
+                }
                 
         except Exception as e:
-            logger.error(f"Exception during song creation: {str(e)}")
-            return {"error": str(e)}
+            logger.error(f"Exception creating song: {str(e)}")
+            return {
+                'error': str(e),
+                'status': 'failed'
+            }
     
-    def get_song_status(self, task_id):
+    def check_song_status(self, task_id: str) -> Dict[str, Any]:
         """
-        Check the status of a song creation task
+        Check the status of a song creation task.
         
         Args:
-            task_id (str): The task ID returned from create_song
+            task_id: Task ID from song creation
             
         Returns:
-            dict: The status of the song creation task
+            Response JSON from the API
         """
         if self.simulation_mode:
-            logger.info(f"SIMULATION: Checking status for task: {task_id}")
+            logger.info("Simulation mode - returning mock status")
             return {
-                "status": "succeeded",
-                "task_id": task_id,
-                "audio_url": "https://example.com/simulated_song.mp3"
+                'data': [{
+                    'state': 'succeeded',
+                    'title': 'Simulated Song',
+                    'audio_url': 'https://example.com/simulated-audio.mp3',
+                    'video_url': 'https://example.com/simulated-video.mp4',
+                    'image_url': 'https://example.com/simulated-image.jpg',
+                    'duration': 180.0
+                }],
+                'message': 'success'
             }
-            
-        # Prepare headers with API key
-        headers = {
-            "Authorization": f"Bearer {self.api_key}"
-        }
+        
+        # Make the API request
+        url = f"{self.base_url}/api/v1/sonic/task/{task_id}"
+        logger.info(f"Checking status at: {url}")
         
         try:
-            # Make the API request to check status using the correct endpoint format
-            endpoint = f"{self.base_url}/api/v1/sonic/task/{task_id}"
-            logger.info(f"Checking status at: {endpoint}")
-            
-            response = requests.get(
-                endpoint,
-                headers=headers
-            )
-            
-            # Log the response status
+            response = httpx.get(url, headers=self._get_headers())
             logger.info(f"Song status check response: {response.status_code}")
             logger.info(f"Response text: {response.text}")
             
-            # Check if the request was successful
             if response.status_code == 200:
-                result = response.json()
-                
-                # Extract relevant information from the response
-                if result.get("code") == 200 and result.get("data"):
-                    data_array = result.get("data")
-                    
-                    # First check if any song has succeeded
-                    for song_data in data_array:
-                        if song_data.get("state") == "succeeded":
-                            return {
-                                "status": "succeeded",
-                                "task_id": task_id,
-                                "audio_url": song_data.get("audio_url"),
-                                "title": song_data.get("title"),
-                                "lyrics": song_data.get("lyrics"),
-                                "image_url": song_data.get("image_url"),
-                                "video_url": song_data.get("video_url"),
-                                "duration": song_data.get("duration"),
-                                "created_at": song_data.get("created_at")
-                            }
-                    
-                    # If no succeeded songs, return the first song's status
-                    first_song = data_array[0]
-                    return {
-                        "status": first_song.get("state"),  # "pending", "running", or "succeeded"
-                        "task_id": task_id,
-                        "audio_url": first_song.get("audio_url"),
-                        "title": first_song.get("title"),
-                        "lyrics": first_song.get("lyrics"),
-                        "image_url": first_song.get("image_url"),
-                        "video_url": first_song.get("video_url"),
-                        "duration": first_song.get("duration"),
-                        "created_at": first_song.get("created_at")
-                    }
-                else:
-                    logger.error(f"Invalid response format: {result}")
-                    return {"error": "Invalid response format", "status": "failed"}
-            elif response.status_code == 202:
-                # Task is not ready yet, but this is expected behavior
-                logger.info(f"Task {task_id} is still processing")
-                return {
-                    "status": "pending",
-                    "task_id": task_id,
-                    "message": "Task is still processing"
-                }
+                return response.json()
             else:
                 logger.error(f"Error checking song status: {response.text}")
-                return {"error": response.text, "status": response.status_code}
+                return None
                 
         except Exception as e:
-            logger.error(f"Exception during song status check: {str(e)}")
-            return {"error": str(e)}
+            logger.error(f"Exception checking song status: {str(e)}")
+            return None
     
-    def _simulate_song_creation(self, prompt, style, title, mv):
+    def create_persona(
+        self,
+        name: str,
+        description: str,
+        continue_clip_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Simulate song creation for testing without API calls
+        Create a persona for song generation.
         
         Args:
-            prompt (str): Lyrics or description for the song
-            style (str): Music style/tags
-            title (str): Song title
-            mv (str): Music model
+            name: Persona name
+            description: Description of the persona
+            continue_clip_id: Optional clip ID to base the persona on
             
         Returns:
-            dict: Simulated API response
+            Dictionary with persona_id and other response data
         """
-        logger.info("Generating simulated song response")
-        
-        # Create a simulated response
-        return {
-            "task_id": "sim_task_12345",
-            "message": "success",
-            "status": "pending"
-        }
-    
-    # Legacy method - kept for compatibility but will use simulation
-    def create_persona(self, name, description, continue_clip_id=None):
-        """
-        Create a persona (NOTE: Currently unstable according to MusicAPI support)
-        This method now returns a simulated response since the feature is unstable
-        
-        Args:
-            name (str): Name of the persona
-            description (str): Description of the persona
-            continue_clip_id (str, optional): ID of a clip to continue from
-            
-        Returns:
-            dict: Simulated response
-        """
-        logger.warning("Persona creation is currently unstable - returning simulated response")
-        
-        # Return a simulated persona response
-        return {
-            "id": f"sim_persona_{name.lower().replace(' ', '_')}",
-            "name": name,
-            "description": description,
-            "status": "simulated",
-            "message": "Persona creation is currently unstable according to MusicAPI support"
-        }
-
-    async def create_song_with_persona(self, persona_id, prompt, style="kpop", parameters=None, title=None):
-        """
-        Create a song on MusicAPI.ai using a persona.
-        
-        Args:
-            persona_id (str): The ID of the persona to use
-            prompt (str): The lyrics or prompt for the song
-            style (str, optional): The style/tags of the song (e.g., "kpop")
-            parameters (dict, optional): Additional parameters for the song
-            title (str, optional): The title of the song
-        
-        Returns:
-            dict: The created song data
-        """
-        if not self.api_key:
-            # Simulate a response
-            print(f"Simulated: Created song with prompt '{prompt}' on MusicAPI.ai")
+        if self.simulation_mode:
+            logger.info("Simulation mode - returning mock persona")
             return {
-                "id": "simulated-song-id",
-                "audio_url": "https://example.com/simulated-song.mp3",
-                "lyrics": "Simulated lyrics for the song"
+                'persona_id': 'simulated-persona-id',
+                'name': name,
+                'description': description,
+                'status': 'succeeded'
             }
         
-        # Prepare the payload according to the API documentation
+        # Prepare payload
         payload = {
-            "task_type": "persona_music",
-            "custom_mode": True,
-            "prompt": prompt,
-            "persona_id": persona_id,
-            "mv": "sonic-v3-5"  # Using the default model
+            'name': name,
+            'description': description
         }
         
-        # Add optional parameters
-        if title:
-            payload["title"] = title
+        if continue_clip_id:
+            payload['continue_clip_id'] = continue_clip_id
         
-        if style:
-            payload["tags"] = style
+        # Make the API request
+        url = f"{self.base_url}/api/v1/sonic/persona"
+        logger.info(f"Creating persona at: {url}")
         
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-        
-        async with httpx.AsyncClient() as client:
-            # First, create the song task
-            response = await client.post(
-                f"{self.base_url}/api/v1/sonic/create",
-                json=payload,
-                headers=headers
-            )
+        try:
+            response = httpx.post(url, json=payload, headers=self._get_headers())
+            logger.info(f"Persona creation response: {response.status_code}")
             
             if response.status_code == 200:
-                data = response.json()
-                task_id = data.get("task_id")
-                
-                if not task_id:
-                    raise Exception("No task_id returned from API")
-                
-                # Now we need to poll for the result using the task_id
-                # This is a simplified version - in a real implementation, you would
-                # implement proper polling with timeouts and error handling
-                max_attempts = 30
-                for attempt in range(max_attempts):
-                    # Wait a bit before checking
-                    await asyncio.sleep(30)  # Changed from 5 to 30 seconds
-                    
-                    # Check the status of the task using the correct endpoint
-                    status_response = await client.get(
-                        f"{self.base_url}/api/v1/sonic/task/{task_id}",
-                        headers=headers
-                    )
-                    
-                    if status_response.status_code == 200:
-                        status_data = status_response.json()
-                        
-                        # Check if the task is complete
-                        if status_data.get("code") == 200 and status_data.get("data"):
-                            data_array = status_data.get("data")
-                            
-                            # First check if any song has succeeded
-                            for song_data in data_array:
-                                if song_data.get("state") == "succeeded":
-                                    # Return the song data
-                                    return {
-                                        "id": task_id,
-                                        "audio_url": song_data.get("audio_url"),
-                                        "lyrics": song_data.get("lyrics"),
-                                        "title": song_data.get("title"),
-                                        "image_url": song_data.get("image_url"),
-                                        "video_url": song_data.get("video_url"),
-                                        "duration": song_data.get("duration"),
-                                        "created_at": song_data.get("created_at")
-                                    }
-                            
-                            # If no succeeded songs, check if any have failed
-                            for song_data in data_array:
-                                if song_data.get("state") == "failed":
-                                    raise Exception(f"Task failed: {song_data}")
-                            
-                            # If neither succeeded nor failed, continue polling
-                
-                # If we've reached here, the task didn't complete in time
-                raise Exception(f"Task {task_id} did not complete in time")
+                return response.json()
             else:
-                raise Exception(f"Error creating song: {response.text}") 
+                logger.error(f"Error creating persona: {response.text}")
+                return {
+                    'error': response.text,
+                    'status': 'failed'
+                }
+                
+        except Exception as e:
+            logger.error(f"Exception creating persona: {str(e)}")
+            return {
+                'error': str(e),
+                'status': 'failed'
+            }
+    
+    def create_cover(
+        self,
+        continue_clip_id: str,
+        prompt: str,
+        title: Optional[str] = None,
+        style: Optional[str] = None,
+        negative_tags: Optional[str] = None,
+        make_instrumental: bool = False,
+        mv: str = 'sonic-v4',
+        gpt_description_prompt: Optional[str] = None,
+        voice_gender: str = 'female'
+    ) -> Dict[str, Any]:
+        """
+        Create a cover version of a song.
+        
+        Args:
+            continue_clip_id: Original clip ID to base the cover on
+            prompt: Lyrics or prompt for the song
+            title: Song title
+            style: Style tags (comma separated)
+            negative_tags: Tags to avoid in generation
+            make_instrumental: Whether to make an instrumental version
+            mv: Music video generation type
+            gpt_description_prompt: Description prompt for the song
+            voice_gender: Voice gender for the song (female or male)
+            
+        Returns:
+            Dictionary with task_id, message, and status
+        """
+        if self.simulation_mode:
+            logger.info("Simulation mode - returning mock cover response")
+            return {
+                'task_id': 'simulated-cover-task-id',
+                'message': 'Cover creation task initiated successfully (simulated)',
+                'status': 'pending'
+            }
+        
+        # Log the prompt
+        logger.info(f"Creating cover with prompt: {prompt[:100]}...")
+        
+        # Prepare payload
+        payload = {
+            'task_type': 'cover_music',
+            'custom_mode': True,
+            'continue_clip_id': continue_clip_id,
+            'prompt': prompt,
+            'mv': mv,
+            'make_instrumental': make_instrumental
+        }
+        
+        # Add optional parameters if provided
+        if title:
+            payload['title'] = title
+            
+        # Add style tags and voice gender
+        tags = []
+        if style:
+            tags.append(style)
+        if voice_gender:
+            tags.append(f"{voice_gender} voice")
+        
+        if tags:
+            payload['tags'] = ', '.join(tags)
+            
+        if negative_tags:
+            payload['negative_tags'] = negative_tags
+            
+        if gpt_description_prompt and len(gpt_description_prompt) <= 199:
+            payload['gpt_description_prompt'] = gpt_description_prompt
+        
+        # Make the API request
+        url = f"{self.base_url}/api/v1/sonic/create"
+        logger.info(f"Sending cover request to: {url}")
+        
+        try:
+            response = httpx.post(url, json=payload, headers=self._get_headers())
+            logger.info(f"Cover creation response: {response.status_code}")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                task_id = response_data.get('task_id')
+                logger.info(f"Cover creation task initiated with ID: {task_id}")
+                
+                return {
+                    'task_id': task_id,
+                    'message': 'Cover creation task initiated successfully',
+                    'status': 'pending'
+                }
+            else:
+                logger.error(f"Error creating cover: {response.text}")
+                return {
+                    'error': response.text,
+                    'status': 'failed'
+                }
+                
+        except Exception as e:
+            logger.error(f"Exception creating cover: {str(e)}")
+            return {
+                'error': str(e),
+                'status': 'failed'
+            } 

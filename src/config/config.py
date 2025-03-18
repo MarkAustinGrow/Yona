@@ -9,7 +9,7 @@ load_dotenv()
 
 # OpenAI API configuration
 OPENAI_KEY = os.getenv("OPENAI_KEY")
-OPENAI_MODEL = "gpt-4"
+OPENAI_MODEL = "gpt-4o"  # GPT-4o supports structured outputs
 
 # MusicAPI.ai configuration
 MUSICAPI_KEY = os.getenv("MUSICAPI_KEY")

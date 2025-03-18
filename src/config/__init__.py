@@ -1,3 +1,3 @@
 """
-Configuration for the Yona project.
+Config package initialization.
 """ 
