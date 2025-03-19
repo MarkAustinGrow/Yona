@@ -37,12 +37,12 @@ def parse_arguments():
     # Required arguments
     parser.add_argument('prompt', help='Prompt describing the song to create')
     
-    # Optional arguments
-    parser.add_argument('--style', help='Additional style tags for the song (e.g., "kpop, electronic")')
-    parser.add_argument('--mv', default='sonic-v4', help='Music video generation type')
-    parser.add_argument('--negative-tags', help='Negative tags to avoid in generation')
-    parser.add_argument('--instrumental', action='store_true', help='Make the song instrumental')
-    parser.add_argument('--voice-gender', default='female', help='Voice gender for the song')
+    # Optional arguments - now used to override LLM-generated parameters if desired
+    parser.add_argument('--override-style', help='Override LLM-generated style tags')
+    parser.add_argument('--override-negative-tags', help='Override LLM-generated negative tags')
+    parser.add_argument('--override-instrumental', action='store_true', help='Override LLM decision on instrumental')
+    parser.add_argument('--override-mv', help='Override LLM-generated music video type')
+    parser.add_argument('--override-description', help='Override LLM-generated description')
     parser.add_argument('--max-attempts', type=int, default=60, help='Maximum number of status check attempts')
     parser.add_argument('--check-interval', type=int, default=30, help='Time in seconds between status checks')
     parser.add_argument('--simulation', action='store_true', help='Run in simulation mode (no API calls)')
@@ -109,38 +109,39 @@ def main():
         
         logger.info(f"Lyrics saved to temporary file: {lyrics_file}")
         
-        # Prepare style tags based on concept
-        style_tags = []
-        if args.style:
-            style_tags.append(args.style)
+        # Extract parameters from the LLM-generated concept
+        style_tags = concept.get('style_tags')
+        negative_tags = concept.get('negative_tags')
+        make_instrumental = concept.get('make_instrumental', False)
+        mv_type = concept.get('mv_type', 'sonic-v4')
+        description = concept.get('description', '')
         
-        # Add mood and theme to the style if available
-        if 'mood' in concept:
-            style_tags.append(concept['mood'])
-        if 'musical_elements' in concept:
-            style_tags.append(concept['musical_elements'])
-        
-        style = ", ".join(style_tags) if style_tags else None
-        
-        # Prepare description
-        description = f"A song about {concept.get('theme', 'the given theme')} with a {concept.get('mood', 'specific')} mood."
-        if 'lyrics_concept' in concept:
-            description += f" {concept['lyrics_concept']}"
+        # Apply overrides if provided
+        if args.override_style:
+            style_tags = args.override_style
+        if args.override_negative_tags:
+            negative_tags = args.override_negative_tags
+        if args.override_instrumental:
+            make_instrumental = True
+        if args.override_mv:
+            mv_type = args.override_mv
+        if args.override_description:
+            description = args.override_description
         
         # Initialize MusicAPI
         music_api = MusicAPI(simulation_mode=args.simulation)
         
-        # Create the song
+        # Create the song with hard-coded female voice
         logger.info(f"Creating song: {title}")
         result = music_api.create_song(
             prompt=lyrics,
             title=title,
-            style=style,
-            negative_tags=args.negative_tags,
-            make_instrumental=args.instrumental,
-            mv=args.mv,
+            style=style_tags,
+            negative_tags=negative_tags,
+            make_instrumental=make_instrumental,
+            mv=mv_type,
             gpt_description_prompt=description[:199],  # Limit to 199 characters
-            voice_gender=args.voice_gender
+            voice_gender="female"  # Hard-coded as female
         )
         
         # Clean up the temporary lyrics file
@@ -211,22 +212,37 @@ def main():
             # Store the song data in Supabase
             supabase_client = SupabaseClient(simulation_mode=args.simulation)
             
+            # Create a params_used object with all parameters
+            params_used = {
+                'prompt': lyrics,
+                'title': title,
+                'style': style_tags,
+                'negative_tags': negative_tags,
+                'make_instrumental': make_instrumental,
+                'mv': mv_type,
+                'gpt_description_prompt': description[:199] if description else None,
+                'voice_gender': 'female',  # Hard-coded as female
+                'original_prompt': args.prompt,
+                'concept': concept  # Include the full LLM-generated concept
+            }
+            
             # Prepare song data for storage
             song_data_for_db = {
                 'title': title,
                 'lyrics': lyrics,
-                'style': style,
+                'style': style_tags,
                 'audio_url': audio_url,
                 'video_url': video_url,
                 'image_url': image_url,
-                'make_instrumental': args.instrumental,
-                'mv': args.mv,
+                'make_instrumental': make_instrumental,
+                'mv': mv_type,
                 'gpt_description': description[:199],
-                'negative_tags': args.negative_tags,
+                'negative_tags': negative_tags,
                 'duration': duration,
                 'original_prompt': args.prompt,
                 'song_concept': json.dumps(concept),
-                'persona_id': 'direct_generation'  # Use direct_generation as we're not using a persona
+                'persona_id': 'direct_generation',  # Use direct_generation as we're not using a persona
+                'params_used': params_used  # Add the params_used field
             }
             
             # Store song data in Supabase

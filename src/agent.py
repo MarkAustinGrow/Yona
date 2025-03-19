@@ -69,6 +69,7 @@ class YonaAgent:
             
         Returns:
             Dictionary containing the song concept with keys like title, theme, mood, etc.
+            and additional parameters for song creation.
         """
         logger.info(f"Generating song concept from prompt: {prompt}")
         
@@ -79,11 +80,16 @@ class YonaAgent:
                 "theme": "Imagination",
                 "mood": "Upbeat",
                 "musical_elements": "Electronic, Pop",
-                "lyrics_concept": "A song about creating something from nothing"
+                "lyrics_concept": "A song about creating something from nothing",
+                "style_tags": "kpop, electronic, upbeat",
+                "negative_tags": "dark, heavy metal, sad",
+                "make_instrumental": False,
+                "mv_type": "sonic-v4",
+                "description": "An upbeat electronic pop song about imagination and creativity"
             }
         
         try:
-            # Use OpenAI to generate a song concept
+            # Use OpenAI to generate a song concept with additional parameters
             system_message = f"""
             You are Yona, a K-pop songwriter. Generate a detailed song concept based on the user's prompt.
             Return a JSON object with the following fields:
@@ -92,6 +98,11 @@ class YonaAgent:
             - mood: The emotional mood of the song
             - musical_elements: Key musical elements or genre influences
             - lyrics_concept: A brief description of what the lyrics should convey
+            - style_tags: Comma-separated style tags for the song (e.g., "kpop, electronic, bright")
+            - negative_tags: Comma-separated tags to avoid in generation (e.g., "dark, heavy metal")
+            - make_instrumental: Boolean indicating if the song should be instrumental (usually false)
+            - mv_type: Music video generation type (one of: "sonic-v4", "sonic-v3", "none")
+            - description: A brief description of the song (max 199 characters)
             
             Your response should be ONLY the JSON object, nothing else.
             """
@@ -114,13 +125,18 @@ class YonaAgent:
             
         except Exception as e:
             logger.error(f"Error generating song concept: {str(e)}")
-            # Fallback to a basic concept
+            # Fallback to a basic concept with default parameters
             return {
                 "title": prompt[:30] + "...",
                 "theme": prompt,
                 "mood": "Neutral",
                 "musical_elements": "K-pop",
-                "lyrics_concept": prompt
+                "lyrics_concept": prompt,
+                "style_tags": "kpop, pop",
+                "negative_tags": "dark, heavy",
+                "make_instrumental": False,
+                "mv_type": "sonic-v4",
+                "description": f"A K-pop song about {prompt[:50]}..."
             }
     
     def generate_lyrics(self, concept: Dict[str, Any]) -> str:
@@ -315,6 +331,18 @@ Final thoughts about {theme}
                 
                 logger.info(f"Audio URL: {audio_url}")
                 
+                # Create params_used object
+                params_used = {
+                    'prompt': lyrics,
+                    'title': title,
+                    'style': style,
+                    'negative_tags': negative_tags,
+                    'make_instrumental': make_instrumental,
+                    'mv': mv,
+                    'gpt_description_prompt': gpt_description_prompt[:199] if gpt_description_prompt else None,
+                    'voice_gender': voice_gender
+                }
+                
                 # Prepare song data for storage
                 song_data_for_db = {
                     'title': title,
@@ -328,7 +356,8 @@ Final thoughts about {theme}
                     'gpt_description': gpt_description_prompt[:199] if gpt_description_prompt else None,
                     'negative_tags': negative_tags,
                     'duration': duration,
-                    'persona_id': 'direct_generation'  # Use direct_generation as we're not using a persona
+                    'persona_id': 'direct_generation',  # Use direct_generation as we're not using a persona
+                    'params_used': params_used  # Add the params_used field
                 }
                 
                 # Store song data in Supabase
@@ -438,17 +467,42 @@ Final thoughts about {theme}
                 else:
                     lyrics = params['lyrics']
                     
-                # Create the song
+                # Extract parameters from the LLM-generated concept
+                style_tags = concept.get('style_tags')
+                negative_tags = concept.get('negative_tags')
+                make_instrumental = concept.get('make_instrumental', False)
+                mv_type = concept.get('mv_type', 'sonic-v4')
+                description = concept.get('description', '')
+                
+                # Create params_used object
+                params_used = {
+                    'prompt': lyrics,
+                    'title': concept.get('title'),
+                    'style': style_tags,
+                    'negative_tags': negative_tags,
+                    'make_instrumental': make_instrumental,
+                    'mv': mv_type,
+                    'gpt_description_prompt': description,
+                    'voice_gender': 'female',  # Hard-coded as female
+                    'original_prompt': user_input,
+                    'concept': concept  # Include the full LLM-generated concept
+                }
+                
+                # Create the song with hard-coded female voice
                 result = self.create_song(
                     title=concept.get('title'),
                     lyrics=lyrics,
-                    style=params.get('style'),
-                    negative_tags=params.get('negative_tags'),
-                    make_instrumental=params.get('make_instrumental', False),
-                    mv=params.get('mv', 'sonic-v4'),
-                    gpt_description_prompt=params.get('description'),
-                    voice_gender=params.get('voice_gender', 'female')
+                    style=style_tags,
+                    negative_tags=negative_tags,
+                    make_instrumental=make_instrumental,
+                    mv=mv_type,
+                    gpt_description_prompt=description,
+                    voice_gender="female"  # Hard-coded as female
                 )
+                
+                # Add params_used to the result if successful
+                if result.get('status') != 'failed':
+                    result['params_used'] = params_used
                 
                 if result.get('status') == 'failed':
                     return {

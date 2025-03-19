@@ -163,4 +163,107 @@ class SupabaseClient:
                 
         except Exception as e:
             logger.error(f"Error listing songs: {str(e)}")
-            return [] 
+            return []
+    
+    def get_feedback_by_id(self, feedback_id: str) -> Dict[str, Any]:
+        """
+        Retrieve feedback by its ID.
+        
+        Args:
+            feedback_id: The ID of the feedback to retrieve
+            
+        Returns:
+            Dictionary with feedback data, or None if not found
+        """
+        if self.simulation_mode:
+            logger.info(f"Simulation mode - would retrieve feedback with ID: {feedback_id}")
+            return {
+                'id': feedback_id,
+                'song_id': 'simulated-song-id',
+                'rating': 4,
+                'comments': 'Make it more electronic with higher energy',
+                'created_at': '2025-03-19T10:19:20.875015+00'
+            }
+        
+        logger.info(f"Retrieving feedback with ID: {feedback_id}")
+        
+        try:
+            response = self.client.table("feedback").select("*").eq("id", feedback_id).execute()
+            
+            if response.data and len(response.data) > 0:
+                logger.info(f"Retrieved feedback for song: {response.data[0].get('song_id')}")
+                return response.data[0]
+            else:
+                logger.warning(f"No feedback found with ID: {feedback_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error retrieving feedback: {str(e)}")
+            return None
+    
+    def update_feedback(self, feedback_id: str, data: Dict[str, Any]) -> bool:
+        """
+        Update a feedback record.
+        
+        Args:
+            feedback_id: The ID of the feedback to update
+            data: Dictionary with fields to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if self.simulation_mode:
+            logger.info(f"Simulation mode - would update feedback {feedback_id} with {data}")
+            return True
+        
+        logger.info(f"Updating feedback {feedback_id}")
+        
+        try:
+            response = self.client.table("feedback").update(data).eq("id", feedback_id).execute()
+            
+            if response.data and len(response.data) > 0:
+                logger.info(f"Updated feedback: {feedback_id}")
+                return True
+            else:
+                logger.warning(f"No feedback updated with ID: {feedback_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating feedback: {str(e)}")
+            return False
+    
+    def get_unprocessed_feedback(self) -> List[Dict[str, Any]]:
+        """
+        Get all feedback records that haven't been processed yet (rating is NULL).
+        
+        Returns:
+            List of unprocessed feedback records
+        """
+        if self.simulation_mode:
+            logger.info("Simulation mode - would retrieve unprocessed feedback")
+            return [
+                {
+                    'id': 'simulated-feedback-id-1',
+                    'song_id': 'simulated-song-id-1',
+                    'rating': None,  # NULL rating
+                    'comments': 'Make it more electronic with higher energy',
+                    'created_at': '2025-03-19T10:19:20.875015+00'
+                }
+            ]
+        
+        logger.info("Retrieving unprocessed feedback (where rating is NULL)")
+        
+        try:
+            # Query feedback table for records where rating is NULL
+            response = self.client.table("feedback").select("*").is_("rating", "null").execute()
+            
+            if response.data:
+                logger.info(f"Found {len(response.data)} unprocessed feedback records")
+                return response.data
+            else:
+                logger.info("No unprocessed feedback found")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error retrieving unprocessed feedback: {str(e)}")
+            return []
