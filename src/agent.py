@@ -10,6 +10,7 @@ import os
 import json
 import logging
 import time
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List, Union
 
 import openai
@@ -76,6 +77,17 @@ class YonaAgent:
         
         # Share DID manager with MusicAPI for authentication
         self.music_api.did_manager = self.did_manager
+        
+        # Add Supabase log handler
+        try:
+            from src.logging_utils import SupabaseLogHandler
+            supabase_handler = SupabaseLogHandler(self.supabase_client)
+            supabase_handler.setLevel(logging.INFO)  # Only log INFO and above
+            supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(supabase_handler)
+            logger.info("Supabase log handler initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize Supabase log handler: {str(e)}")
         
         logger.info(f"YonaAgent initialized with DID: {self.did_manager.did}")
     
@@ -585,6 +597,28 @@ Final thoughts about {theme}
             True if successful, False otherwise
         """
         return self.did_manager.save_private_key(path)
+    
+    def cleanup_old_logs(self, days_to_keep: int = 7) -> int:
+        """
+        Remove logs older than the specified number of days.
+        
+        Args:
+            days_to_keep: Number of days of logs to keep
+            
+        Returns:
+            Number of logs deleted
+        """
+        cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+        
+        try:
+            # Delete logs older than cutoff_date
+            response = self.supabase_client.client.table("yona_logs").delete().lt("timestamp", cutoff_date.isoformat()).execute()
+            deleted_count = len(response.data) if response.data else 0
+            logger.info(f"Cleaned up {deleted_count} logs older than {days_to_keep} days")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error cleaning up old logs: {str(e)}")
+            return 0
     
     def _analyze_request(self, user_input: str) -> Dict[str, Any]:
         """

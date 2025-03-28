@@ -122,6 +122,11 @@ def main():
     logger.info("Initializing YonaAgent")
     agent = YonaAgent()
     
+    # Test logging to Supabase
+    logger.info("Test log message from Yona CLI")
+    logger.warning("Test warning message from Yona CLI")
+    logger.error("Test error message from Yona CLI")
+    
     # Run in the appropriate mode
     if args.interactive:
         interactive_mode(agent)

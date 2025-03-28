@@ -10,7 +10,8 @@ import sys
 import json
 import logging
 import time
-from datetime import datetime
+import schedule
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # Add the parent directory to the path
@@ -324,6 +325,19 @@ def main():
     # Share DID manager with MusicAPI for authentication
     music_api.did_manager = agent.did_manager
     
+    # Define the log cleanup task
+    def log_cleanup_task():
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"[{current_time}] Running scheduled log cleanup")
+        try:
+            deleted = agent.cleanup_old_logs(days_to_keep=7)  # Keep logs for 7 days
+            logger.info(f"[{current_time}] Scheduled log cleanup complete - deleted {deleted} old logs")
+        except Exception as e:
+            logger.error(f"[{current_time}] Error in scheduled log cleanup: {str(e)}")
+
+    # Schedule the task to run once per day
+    schedule.every(1).day.at("00:00").do(log_cleanup_task)
+    
     # Set the interval (in seconds)
     interval = 3600  # 1 hour
     
@@ -376,6 +390,9 @@ def main():
             logger.info(f"Next processing cycle will run at {next_run_time}")
             print(f"Next processing cycle will run at {next_run_time}")
             
+            # Run any pending scheduled tasks
+            schedule.run_pending()
+            
             # Sleep for the specified interval
             print(f"Sleeping for {interval} seconds (1 hour)...")
             print("(Press Ctrl+C to stop)")
@@ -384,6 +401,8 @@ def main():
             sleep_increment = 10  # seconds
             for _ in range(interval // sleep_increment):
                 time.sleep(sleep_increment)
+                # Run any pending scheduled tasks
+                schedule.run_pending()
                 # Check for keyboard interrupt
                 if sys.stdin.isatty() and sys.stdin.readable() and sys.stdin.seekable():
                     try:
