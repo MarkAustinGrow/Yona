@@ -1,5 +1,4 @@
 # Create a .gitignore file
-echo "# Python
 __pycache__/
 *.py[cod]
 *$py.class

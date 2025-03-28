@@ -18,33 +18,29 @@ class SupabaseClient:
     Client for interacting with Supabase to store and retrieve song data.
     """
     
-    def __init__(self, url: Optional[str] = None, key: Optional[str] = None, simulation_mode: bool = False):
+    def __init__(self, url: Optional[str] = None, key: Optional[str] = None):
         """
         Initialize the Supabase client.
         
         Args:
             url: Supabase URL (defaults to environment variable)
             key: Supabase key (defaults to environment variable)
-            simulation_mode: If True, will simulate database operations
         """
         self.url = url or SUPABASE_URL
         self.key = key or SUPABASE_KEY
-        self.simulation_mode = simulation_mode
-        self.client = None
         
         # Validate credentials
         if not self.url or not self.key:
-            logger.warning("Supabase credentials are missing! Using simulation mode.")
-            self.simulation_mode = True
+            logger.error("Supabase credentials are missing! Cannot proceed without valid credentials.")
+            raise ValueError("Supabase URL and key are required")
         
-        # Initialize client if not in simulation mode
-        if not self.simulation_mode:
-            try:
-                self.client = create_client(self.url, self.key)
-                logger.info("Supabase client initialized")
-            except Exception as e:
-                logger.error(f"Error initializing Supabase client: {str(e)}")
-                self.simulation_mode = True
+        # Initialize client
+        try:
+            self.client = create_client(self.url, self.key)
+            logger.info("Supabase client initialized")
+        except Exception as e:
+            logger.error(f"Error initializing Supabase client: {str(e)}")
+            raise
     
     def store_song_data(self, song_data: Dict[str, Any]) -> str:
         """
@@ -56,10 +52,6 @@ class SupabaseClient:
         Returns:
             The ID of the created song record
         """
-        if self.simulation_mode:
-            song_id = "simulated-song-id"
-            logger.info(f"Simulation mode - would store song '{song_data.get('title', 'Unknown')}' with ID: {song_id}")
-            return song_id
         
         logger.info(f"Storing song data for '{song_data.get('title', 'Unknown')}' in Supabase")
         
@@ -102,14 +94,6 @@ class SupabaseClient:
         Returns:
             Dictionary with song data, or None if not found
         """
-        if self.simulation_mode:
-            logger.info(f"Simulation mode - would retrieve song with ID: {song_id}")
-            return {
-                'id': song_id,
-                'title': 'Simulated Song',
-                'lyrics': 'Simulated lyrics...',
-                'audio_url': 'https://example.com/simulated-audio.mp3'
-            }
         
         logger.info(f"Retrieving song with ID: {song_id}")
         
@@ -138,16 +122,6 @@ class SupabaseClient:
         Returns:
             List of song data dictionaries
         """
-        if self.simulation_mode:
-            logger.info(f"Simulation mode - would list {limit} songs with offset {offset}")
-            return [
-                {
-                    'id': f'simulated-song-id-{i}',
-                    'title': f'Simulated Song {i}',
-                    'created_at': '2025-03-17T18:20:38.613Z'
-                }
-                for i in range(1, min(limit + 1, 6))
-            ]
         
         logger.info(f"Listing songs (limit: {limit}, offset: {offset})")
         
@@ -175,15 +149,6 @@ class SupabaseClient:
         Returns:
             Dictionary with feedback data, or None if not found
         """
-        if self.simulation_mode:
-            logger.info(f"Simulation mode - would retrieve feedback with ID: {feedback_id}")
-            return {
-                'id': feedback_id,
-                'song_id': 'simulated-song-id',
-                'rating': 4,
-                'comments': 'Make it more electronic with higher energy',
-                'created_at': '2025-03-19T10:19:20.875015+00'
-            }
         
         logger.info(f"Retrieving feedback with ID: {feedback_id}")
         
@@ -212,9 +177,6 @@ class SupabaseClient:
         Returns:
             True if successful, False otherwise
         """
-        if self.simulation_mode:
-            logger.info(f"Simulation mode - would update feedback {feedback_id} with {data}")
-            return True
         
         logger.info(f"Updating feedback {feedback_id}")
         
@@ -239,17 +201,6 @@ class SupabaseClient:
         Returns:
             List of unprocessed feedback records
         """
-        if self.simulation_mode:
-            logger.info("Simulation mode - would retrieve unprocessed feedback")
-            return [
-                {
-                    'id': 'simulated-feedback-id-1',
-                    'song_id': 'simulated-song-id-1',
-                    'rating': None,  # NULL rating
-                    'comments': 'Make it more electronic with higher energy',
-                    'created_at': '2025-03-19T10:19:20.875015+00'
-                }
-            ]
         
         logger.info("Retrieving unprocessed feedback (where rating is NULL)")
         
@@ -267,3 +218,51 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error retrieving unprocessed feedback: {str(e)}")
             return []
+    
+    def store_song_version(self, original_song_id: str, version_data: Dict[str, Any]) -> str:
+        """
+        Store a new version of a song in the song_versions table.
+        
+        Args:
+            original_song_id: ID of the original song
+            version_data: Dictionary with version data
+                
+        Returns:
+            The ID of the created song version record
+        """
+        
+        logger.info(f"Storing song version for song {original_song_id}")
+        
+        try:
+            # Get the highest current version number for this song
+            response = self.client.table("song_versions").select("version_number").eq("song_id", original_song_id).order("version_number", desc=True).limit(1).execute()
+            
+            # Determine the next version number
+            next_version = 1
+            if response.data and len(response.data) > 0:
+                next_version = response.data[0].get('version_number', 0) + 1
+            
+            # Prepare the data for insertion
+            insert_data = {
+                'song_id': original_song_id,
+                'version_number': next_version,
+                'title': version_data.get('title'),
+                'lyrics': version_data.get('lyrics'),
+                'audio_url': version_data.get('audio_url'),
+                'params_used': version_data.get('params_used')
+            }
+            
+            # Insert the record
+            response = self.client.table("song_versions").insert(insert_data).execute()
+            
+            if response.data and len(response.data) > 0:
+                version_id = response.data[0].get('id')
+                logger.info(f"Song version stored successfully with ID: {version_id} (version {next_version})")
+                return version_id
+            else:
+                logger.error("No data returned from Supabase insert operation")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error storing song version: {str(e)}")
+            return None

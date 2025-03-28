@@ -29,7 +29,6 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Interact with Yona, an agentic AI K-pop star')
     
     # Optional arguments
-    parser.add_argument('--simulation', action='store_true', help='Run in simulation mode (no API calls)')
     parser.add_argument('--interactive', action='store_true', help='Run in interactive mode')
     parser.add_argument('--request', help='Single request to process (non-interactive mode)')
     
@@ -121,7 +120,7 @@ def main():
     
     # Initialize the agent
     logger.info("Initializing YonaAgent")
-    agent = YonaAgent(simulation_mode=args.simulation)
+    agent = YonaAgent()
     
     # Run in the appropriate mode
     if args.interactive:

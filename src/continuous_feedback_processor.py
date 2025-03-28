@@ -239,9 +239,10 @@ def process_feedback(feedback, agent, music_api, supabase_client):
                     'negative_tags': modified_params.get('negative_tags'),
                     'duration': duration,
                     'original_song_id': song_id,
-                    'feedback_id': feedback_id,
+                    # Removed feedback_id as it doesn't exist in the songs table
                     'persona_id': 'direct_generation',
-                    'params_used': modified_params
+                    'params_used': modified_params,
+                    'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None
                 }
                 
                 # Store song data in Supabase
@@ -250,14 +251,31 @@ def process_feedback(feedback, agent, music_api, supabase_client):
                 if db_song_id:
                     logger.info(f"Song data stored in Supabase: {db_song_id}")
                     logger.info(f"Successfully created song based on feedback: {modified_params.get('title', original_song.get('title'))} (ID: {db_song_id})")
+                    
+                    # Also store as a version in the song_versions table
+                    version_data = {
+                        'title': modified_params.get('title', original_song.get('title')),
+                        'lyrics': modified_params.get('prompt', original_song.get('lyrics')),
+                        'audio_url': audio_url,
+                        'params_used': modified_params,
+                        'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None
+                    }
+                    
+                    # Store in song_versions table
+                    version_id = supabase_client.store_song_version(song_id, version_data)
+                    
+                    if version_id:
+                        logger.info(f"Song version stored in song_versions table: {version_id}")
+                    else:
+                        logger.warning("Failed to store song version in song_versions table")
                 else:
                     logger.warning("Failed to store song data in Supabase")
                     # Continue anyway to mark feedback as processed
                     
                 # Always mark the feedback as processed, even if DB storage failed
                 # This prevents the system from getting stuck in a loop trying to process the same feedback
-                if supabase_client.update_feedback(feedback_id, {"rating": -999}):
-                    logger.info(f"Feedback {feedback_id} marked as processed (rating set to -999)")
+                if supabase_client.update_feedback(feedback_id, {"rating": 5}):
+                    logger.info(f"Feedback {feedback_id} marked as processed (rating set to 5)")
                     # Return true if either the song was stored or at least the feedback was marked
                     return True
                 else:
@@ -270,7 +288,7 @@ def process_feedback(feedback, agent, music_api, supabase_client):
                 
                 # Try to mark the feedback as processed even if storage failed
                 try:
-                    if supabase_client.update_feedback(feedback_id, {"rating": -999}):
+                    if supabase_client.update_feedback(feedback_id, {"rating": 5}):
                         logger.info(f"Feedback {feedback_id} marked as processed despite storage error")
                         # We still return False because the main operation (storing) failed
                     else:
@@ -300,8 +318,11 @@ def main():
     
     # Initialize clients
     supabase_client = SupabaseClient()
-    agent = YonaAgent()
+    agent = YonaAgent(did_domain="yona.ai")
     music_api = MusicAPI()
+    
+    # Share DID manager with MusicAPI for authentication
+    music_api.did_manager = agent.did_manager
     
     # Set the interval (in seconds)
     interval = 3600  # 1 hour

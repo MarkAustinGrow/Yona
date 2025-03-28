@@ -1,0 +1,22 @@
+version: '3'
+
+services:
+  yona-api:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    command: python run_api_server.py --host 0.0.0.0 --port 5000
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  yona-feedback-processor:
+    build: .
+    env_file:
+      - .env
+    command: python src/continuous_feedback_processor.py
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs

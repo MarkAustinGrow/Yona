@@ -29,7 +29,6 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Create a song based on feedback')
     parser.add_argument('--song-id', required=True, help='ID of the original song')
     parser.add_argument('--feedback-id', required=True, help='ID of the feedback')
-    parser.add_argument('--simulation', action='store_true', help='Run in simulation mode')
     return parser.parse_args()
 
 def modify_parameters_with_openai(original_params, feedback_comment, openai_client):
@@ -89,9 +88,9 @@ def main():
     args = parse_arguments()
     
     # Initialize clients
-    supabase_client = SupabaseClient(simulation_mode=args.simulation)
-    agent = YonaAgent(simulation_mode=args.simulation)
-    music_api = MusicAPI(simulation_mode=args.simulation)
+    supabase_client = SupabaseClient()
+    agent = YonaAgent()
+    music_api = MusicAPI()
     
     try:
         # Get the original song
@@ -214,7 +213,8 @@ def main():
                 'original_song_id': args.song_id,
                 'feedback_id': args.feedback_id,
                 'persona_id': 'direct_generation',
-                'params_used': modified_params
+                'params_used': modified_params,
+                'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None
             }
             
             # Store song data in Supabase
@@ -227,9 +227,26 @@ def main():
                 logger.info(f"Video URL: {video_url}")
                 logger.info(f"Image URL: {image_url}")
                 
-                # Mark the feedback as processed using -999 as a special value
-                if supabase_client.update_feedback(args.feedback_id, {"rating": -999}):
-                    logger.info(f"Feedback {args.feedback_id} marked as processed (rating set to -999)")
+                # Also store as a version in the song_versions table
+                version_data = {
+                    'title': modified_params.get('title', original_song.get('title')),
+                    'lyrics': modified_params.get('prompt', original_song.get('lyrics')),
+                    'audio_url': audio_url,
+                    'params_used': modified_params,
+                    'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None
+                }
+                
+                # Store in song_versions table
+                version_id = supabase_client.store_song_version(args.song_id, version_data)
+                
+                if version_id:
+                    logger.info(f"Song version stored in song_versions table: {version_id}")
+                else:
+                    logger.warning("Failed to store song version in song_versions table")
+                
+                # Mark the feedback as processed using 5 as a rating value
+                if supabase_client.update_feedback(args.feedback_id, {"rating": 5}):
+                    logger.info(f"Feedback {args.feedback_id} marked as processed (rating set to 5)")
                 else:
                     logger.warning(f"Failed to mark feedback {args.feedback_id} as processed")
                 

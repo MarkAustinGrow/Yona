@@ -45,7 +45,6 @@ def parse_arguments():
     parser.add_argument('--override-description', help='Override LLM-generated description')
     parser.add_argument('--max-attempts', type=int, default=60, help='Maximum number of status check attempts')
     parser.add_argument('--check-interval', type=int, default=30, help='Time in seconds between status checks')
-    parser.add_argument('--simulation', action='store_true', help='Run in simulation mode (no API calls)')
     
     return parser.parse_args()
 
@@ -77,16 +76,17 @@ def main():
     args = parse_arguments()
     
     # Check if required API keys are available
-    if not OPENAI_KEY and not args.simulation:
-        logger.warning("OpenAI API key is missing. Set OPENAI_KEY in .env or use --simulation")
+    if not OPENAI_KEY:
+        logger.error("OpenAI API key is missing. Set OPENAI_KEY in .env")
+        return 1
     
-    if not MUSICAPI_KEY and not args.simulation:
-        logger.error("MusicAPI key is missing. Set MUSICAPI_KEY in .env or use --simulation")
+    if not MUSICAPI_KEY:
+        logger.error("MusicAPI key is missing. Set MUSICAPI_KEY in .env")
         return 1
     
     # Initialize the agent
     logger.info("Initializing YonaAgent")
-    agent = YonaAgent(simulation_mode=args.simulation)
+    agent = YonaAgent()
     
     try:
         # Generate song concept
@@ -129,7 +129,7 @@ def main():
             description = args.override_description
         
         # Initialize MusicAPI
-        music_api = MusicAPI(simulation_mode=args.simulation)
+        music_api = MusicAPI()
         
         # Create the song with hard-coded female voice
         logger.info(f"Creating song: {title}")
@@ -210,7 +210,7 @@ def main():
                 logger.warning("Audio URL is not valid, but continuing with storage")
             
             # Store the song data in Supabase
-            supabase_client = SupabaseClient(simulation_mode=args.simulation)
+            supabase_client = SupabaseClient()
             
             # Create a params_used object with all parameters
             params_used = {

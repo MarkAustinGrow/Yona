@@ -17,6 +17,8 @@ from openai import OpenAI
 
 from src.music_api import MusicAPI
 from src.supabase_client import SupabaseClient
+from src.identity.did_manager import DIDManager
+from src.protocol.capability_document import CapabilityDocument
 from src.config.config import OPENAI_KEY, OPENAI_MODEL, YONA_PERSONA
 
 # Configure logging
@@ -34,31 +36,48 @@ class YonaAgent:
     SupabaseClient to create and manage songs.
     """
     
-    def __init__(self, openai_api_key=None, simulation_mode=False):
+    def __init__(self, openai_api_key=None, did_domain="yona.ai", private_key_path=None):
         """
         Initialize the YonaAgent.
         
         Args:
             openai_api_key: API key for OpenAI. If None, uses OPENAI_KEY from config.
-            simulation_mode: If True, runs in simulation mode without making API calls.
+            did_domain: Domain for the did:web identifier
+            private_key_path: Path to a file containing a private key for DID
         """
-        self.simulation_mode = simulation_mode
         
         # Initialize OpenAI client
         self.openai_api_key = openai_api_key or OPENAI_KEY
         if not self.openai_api_key:
-            logger.warning("OpenAI API key not provided. Agent will run in limited mode.")
-        else:
-            self.openai_client = OpenAI(api_key=self.openai_api_key)
+            logger.error("OpenAI API key not provided. Agent cannot function without it.")
+            raise ValueError("OpenAI API key is required")
+        
+        self.openai_client = OpenAI(api_key=self.openai_api_key)
         
         # Initialize tool connections
-        self.music_api = MusicAPI(simulation_mode=simulation_mode)
-        self.supabase_client = SupabaseClient(simulation_mode=simulation_mode)
+        self.music_api = MusicAPI()
+        self.supabase_client = SupabaseClient()
+        
+        # Initialize DID manager
+        self.did_manager = DIDManager(
+            did_domain=did_domain,
+            private_key_path=private_key_path
+        )
+        
+        # Initialize capability document generator
+        self.capability_generator = CapabilityDocument(
+            did=self.did_manager.did,
+            agent_name="Yona AI",
+            agent_description="An AI K-pop star that creates songs based on prompts and feedback"
+        )
         
         # Set up agent parameters
         self.persona = YONA_PERSONA
         
-        logger.info("YonaAgent initialized")
+        # Share DID manager with MusicAPI for authentication
+        self.music_api.did_manager = self.did_manager
+        
+        logger.info(f"YonaAgent initialized with DID: {self.did_manager.did}")
     
     def generate_song_concept(self, prompt: str) -> Dict[str, Any]:
         """
@@ -72,21 +91,6 @@ class YonaAgent:
             and additional parameters for song creation.
         """
         logger.info(f"Generating song concept from prompt: {prompt}")
-        
-        if self.simulation_mode:
-            logger.info("Simulation mode: Returning mock song concept")
-            return {
-                "title": "Simulated Song",
-                "theme": "Imagination",
-                "mood": "Upbeat",
-                "musical_elements": "Electronic, Pop",
-                "lyrics_concept": "A song about creating something from nothing",
-                "style_tags": "kpop, electronic, upbeat",
-                "negative_tags": "dark, heavy metal, sad",
-                "make_instrumental": False,
-                "mv_type": "sonic-v4",
-                "description": "An upbeat electronic pop song about imagination and creativity"
-            }
         
         try:
             # Use OpenAI to generate a song concept with additional parameters
@@ -150,10 +154,6 @@ class YonaAgent:
             String containing the generated lyrics.
         """
         logger.info(f"Generating lyrics for concept: {concept.get('title', 'Untitled')}")
-        
-        if self.simulation_mode:
-            logger.info("Simulation mode: Returning mock lyrics")
-            return "This is a simulated song\nWith simulated lyrics\nFor a simulated world\n"
         
         try:
             # Extract key elements from the concept
@@ -259,16 +259,6 @@ Final thoughts about {theme}
             Dictionary containing the song data, including URLs and metadata.
         """
         logger.info(f"Creating song: {title}")
-        
-        if self.simulation_mode:
-            logger.info("Simulation mode: Returning mock song data")
-            return {
-                "title": title,
-                "audio_url": "https://example.com/simulated-audio.mp3",
-                "video_url": "https://example.com/simulated-video.mp4",
-                "image_url": "https://example.com/simulated-image.jpg",
-                "status": "succeeded"
-            }
         
         try:
             # Create the song using MusicAPI
@@ -405,21 +395,6 @@ Final thoughts about {theme}
             List of dictionaries containing song data
         """
         logger.info(f"Listing songs (limit: {limit}, offset: {offset})")
-        
-        if self.simulation_mode:
-            logger.info("Simulation mode: Returning mock song list")
-            return [
-                {
-                    "id": "sim-1",
-                    "title": "Simulated Song 1",
-                    "audio_url": "https://example.com/sim1.mp3"
-                },
-                {
-                    "id": "sim-2",
-                    "title": "Simulated Song 2",
-                    "audio_url": "https://example.com/sim2.mp3"
-                }
-            ]
         
         try:
             # Get songs from Supabase
@@ -569,6 +544,48 @@ Final thoughts about {theme}
                 'response': f"I encountered an error while processing your request: {str(e)}"
             }
     
+    def get_capability_document(self) -> Dict[str, Any]:
+        """
+        Get the capability document for the agent.
+        
+        Returns:
+            Dictionary containing the capability document
+        """
+        return self.capability_generator.generate()
+    
+    def get_did_document(self) -> Dict[str, Any]:
+        """
+        Get the DID document for the agent.
+        
+        Returns:
+            Dictionary containing the DID document
+        """
+        return self.did_manager.get_did_document()
+    
+    def get_auth_headers(self, request_data: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Get authentication headers for a request.
+        
+        Args:
+            request_data: Optional data to include in the signature
+            
+        Returns:
+            Dictionary with authentication headers
+        """
+        return self.did_manager.get_auth_headers(request_data)
+    
+    def save_private_key(self, path: str) -> bool:
+        """
+        Save the private key to a file.
+        
+        Args:
+            path: Path to save the private key
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return self.did_manager.save_private_key(path)
+    
     def _analyze_request(self, user_input: str) -> Dict[str, Any]:
         """
         Analyze a user request to determine intent and extract parameters.
@@ -579,21 +596,6 @@ Final thoughts about {theme}
         Returns:
             Dictionary with intent and parameters
         """
-        # In simulation mode, use a simple rule-based approach
-        if self.simulation_mode:
-            # Basic intent detection based on keywords
-            if "create" in user_input.lower() and "song" in user_input.lower():
-                return {"intent": "create_song", "parameters": {"prompt": user_input}}
-            elif "list" in user_input.lower() and "song" in user_input.lower():
-                return {"intent": "list_songs", "parameters": {"limit": 10}}
-            elif "get" in user_input.lower() and "song" in user_input.lower():
-                # Try to extract an ID if present
-                import re
-                id_match = re.search(r'id\s+(\w+)', user_input.lower())
-                song_id = id_match.group(1) if id_match else None
-                return {"intent": "get_song", "parameters": {"song_id": song_id}}
-            else:
-                return {"intent": "unknown", "parameters": {}}
         
         # For non-simulation mode, use OpenAI
         system_message = """

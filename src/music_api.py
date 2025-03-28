@@ -19,43 +19,48 @@ class MusicAPI:
     Client for the MusicAPI.ai service that handles song and persona creation.
     """
     
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None, simulation_mode: bool = False):
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         """
         Initialize the MusicAPI client.
         
         Args:
             api_key: API key for MusicAPI.ai (defaults to environment variable)
             base_url: Base URL for the API (defaults to the standard MusicAPI URL)
-            simulation_mode: If True, will simulate responses instead of calling the API
         """
         self.api_key = api_key or MUSICAPI_KEY
         self.base_url = base_url or MUSICAPI_BASE_URL
-        self.simulation_mode = simulation_mode
         
         # Validate API key
-        if not self.api_key and not simulation_mode:
-            logger.warning("MusicAPI key is missing! Using simulation mode.")
-            self.simulation_mode = True
+        if not self.api_key:
+            logger.error("MusicAPI key is missing! Cannot proceed without a valid API key.")
+            raise ValueError("MusicAPI key is required")
         
         # Log initialization
-        if self.simulation_mode:
-            logger.info("MusicAPI initialized in simulation mode")
-        else:
-            logger.info(f"MusicAPI initialized with live API (key: {self.api_key[:5]}...)")
-            logger.info("NOTE: Persona creation is currently unstable according to MusicAPI support")
-            logger.info("Using direct song generation without persona")
+        logger.info(f"MusicAPI initialized with live API (key: {self.api_key[:5]}...)")
+        logger.info("NOTE: Persona creation is currently unstable according to MusicAPI support")
+        logger.info("Using direct song generation without persona")
     
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, include_did_auth=True) -> Dict[str, str]:
         """
         Get the headers for API requests.
         
+        Args:
+            include_did_auth: Whether to include DID authentication headers
+            
         Returns:
             Dictionary with Content-Type and Authorization headers
         """
-        return {
+        headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.api_key}'
         }
+        
+        # Add DID authentication if available and requested
+        if include_did_auth and hasattr(self, 'did_manager') and self.did_manager:
+            auth_headers = self.did_manager.get_auth_headers()
+            headers.update(auth_headers)
+            
+        return headers
     
     def create_song(
         self,
@@ -84,13 +89,6 @@ class MusicAPI:
         Returns:
             Dictionary with task_id, message, and status
         """
-        if self.simulation_mode:
-            logger.info("Simulation mode - returning mock response")
-            return {
-                'task_id': 'simulated-task-id',
-                'message': 'Song creation task initiated successfully (simulated)',
-                'status': 'pending'
-            }
         
         # Log the prompt
         logger.info(f"Creating song with prompt: {prompt[:100]}...")
@@ -177,26 +175,14 @@ class MusicAPI:
         Returns:
             Response JSON from the API
         """
-        if self.simulation_mode:
-            logger.info("Simulation mode - returning mock status")
-            return {
-                'data': [{
-                    'state': 'succeeded',
-                    'title': 'Simulated Song',
-                    'audio_url': 'https://example.com/simulated-audio.mp3',
-                    'video_url': 'https://example.com/simulated-video.mp4',
-                    'image_url': 'https://example.com/simulated-image.jpg',
-                    'duration': 180.0
-                }],
-                'message': 'success'
-            }
         
-        # Make the API request
+        # Make the API request with DID authentication
         url = f"{self.base_url}/api/v1/sonic/task/{task_id}"
         logger.info(f"Checking status at: {url}")
         
         try:
-            response = httpx.get(url, headers=self._get_headers())
+            # Use headers with DID authentication for status checks
+            response = httpx.get(url, headers=self._get_headers(include_did_auth=True))
             logger.info(f"Song status check response: {response.status_code}")
             logger.info(f"Response text: {response.text}")
             
@@ -227,14 +213,6 @@ class MusicAPI:
         Returns:
             Dictionary with persona_id and other response data
         """
-        if self.simulation_mode:
-            logger.info("Simulation mode - returning mock persona")
-            return {
-                'persona_id': 'simulated-persona-id',
-                'name': name,
-                'description': description,
-                'status': 'succeeded'
-            }
         
         # Prepare payload
         payload = {
@@ -298,13 +276,6 @@ class MusicAPI:
         Returns:
             Dictionary with task_id, message, and status
         """
-        if self.simulation_mode:
-            logger.info("Simulation mode - returning mock cover response")
-            return {
-                'task_id': 'simulated-cover-task-id',
-                'message': 'Cover creation task initiated successfully (simulated)',
-                'status': 'pending'
-            }
         
         # Log the prompt
         logger.info(f"Creating cover with prompt: {prompt[:100]}...")
@@ -369,4 +340,4 @@ class MusicAPI:
             return {
                 'error': str(e),
                 'status': 'failed'
-            } 
+            }
