@@ -55,22 +55,48 @@ class SupabaseClient:
         
         logger.info(f"Storing song data for '{song_data.get('title', 'Unknown')}' in Supabase")
         
+        # Make a copy of the song_data to avoid modifying the original
+        song_data_copy = song_data.copy()
+        
         # Check if we need to handle voice_gender separately
         voice_gender = None
         
         # Remove voice_gender from song_data if it exists
-        if 'voice_gender' in song_data:
-            voice_gender = song_data.pop('voice_gender')
+        if 'voice_gender' in song_data_copy:
+            voice_gender = song_data_copy.pop('voice_gender')
             
             # Add voice_gender to style or tags if needed
-            if 'style' in song_data and song_data['style']:
-                if f"{voice_gender} voice" not in song_data['style']:
-                    song_data['style'] = f"{song_data['style']}, {voice_gender} voice"
+            if 'style' in song_data_copy and song_data_copy['style']:
+                if f"{voice_gender} voice" not in song_data_copy['style']:
+                    song_data_copy['style'] = f"{song_data_copy['style']}, {voice_gender} voice"
             else:
-                song_data['style'] = f"{voice_gender} voice"
+                song_data_copy['style'] = f"{voice_gender} voice"
+        
+        # Remove original_prompt from song_data if it exists
+        if 'original_prompt' in song_data_copy:
+            logger.info("Removing 'original_prompt' field from song data")
+            song_data_copy.pop('original_prompt')
+        
+        # Check if params_used contains fields that might not exist in the database schema
+        if 'params_used' in song_data_copy and isinstance(song_data_copy['params_used'], dict):
+            params = song_data_copy['params_used']
+            # Fields to remove from params_used
+            fields_to_remove = ['original_prompt', 'song_concept', 'concept']
+            for field in fields_to_remove:
+                if field in params:
+                    logger.info(f"Removing '{field}' field from params_used")
+                    params.pop(field)
+            
+            # Convert the concept to a string if it exists
+            if 'concept' in params and not isinstance(params['concept'], str):
+                try:
+                    params['concept'] = json.dumps(params['concept'])
+                except:
+                    logger.warning("Could not convert concept to string, removing it")
+                    params.pop('concept')
         
         try:
-            response = self.client.table("songs").insert(song_data).execute()
+            response = self.client.table("songs").insert(song_data_copy).execute()
             
             if response.data and len(response.data) > 0:
                 song_id = response.data[0].get('id')

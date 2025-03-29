@@ -8,7 +8,7 @@ import logging
 import httpx
 from typing import Dict, Any, Optional, List, Union
 
-from src.config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL
+from src.config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL, NURO_BASE_URL
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -164,6 +164,153 @@ class MusicAPI:
                 'error': str(e),
                 'status': 'failed'
             }
+    
+    def create_song_nuro(
+        self,
+        lyrics: str,
+        gender: Optional[str] = None,
+        genre: Optional[str] = None,
+        mood: Optional[str] = None,
+        timbre: Optional[str] = None,
+        duration: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a song using the Nuro API.
+        
+        Args:
+            lyrics: Lyrics for the song (max 2000 characters)
+            gender: The singer's gender ("Female" or "Male")
+            genre: The genre of the song (from allowed values)
+            mood: The mood of the song (from allowed values)
+            timbre: The timbre of the song (from allowed values)
+            duration: Duration of the song in seconds (30-240)
+            
+        Returns:
+            Dictionary with task_id, message, and status
+        """
+        
+        # Log the lyrics
+        logger.info(f"Creating song with Nuro API, lyrics: {lyrics[:100]}...")
+        
+        # Prepare headers
+        headers = self._get_headers()
+        logger.info(f"Using API key: {self.api_key}")
+        logger.info(f"Headers: {headers}")
+        
+        # Prepare payload
+        # Truncate lyrics if they're too long (Nuro API has a 2000 character limit)
+        if len(lyrics) > 1900:  # Leave some margin
+            logger.warning(f"Lyrics are too long ({len(lyrics)} chars), truncating to 1900 chars")
+            truncated_lyrics = lyrics[:1900]
+            # Try to find a good breaking point (end of a line)
+            last_newline = truncated_lyrics.rfind('\n')
+            if last_newline > 1500:  # Only use if we're not cutting off too much
+                truncated_lyrics = truncated_lyrics[:last_newline]
+            lyrics = truncated_lyrics
+            
+        payload = {
+            'lyrics': lyrics
+        }
+        
+        # Add optional parameters if provided
+        if gender:
+            # Ensure proper capitalization (Female/Male)
+            payload['gender'] = gender.capitalize()
+            
+        if genre:
+            payload['genre'] = genre
+            
+        if mood:
+            payload['mood'] = mood
+            
+        if timbre:
+            payload['timbre'] = timbre
+            
+        if duration:
+            # Ensure duration is within allowed range
+            payload['duration'] = max(30, min(240, duration))
+        
+        # Log the payload
+        logger.info(f"Nuro API Payload: {payload}")
+        
+        # Make the API request
+        url = f"{NURO_BASE_URL}/create"
+        logger.info(f"Sending request to Nuro API: {url}")
+        
+        try:
+            response = httpx.post(url, json=payload, headers=headers)
+            logger.info(f"Nuro song creation response status: {response.status_code}")
+            logger.info(f"Response text: {response.text}")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                task_id = response_data.get('task_id')
+                logger.info(f"Nuro song creation task initiated with ID: {task_id}")
+                
+                return {
+                    'task_id': task_id,
+                    'message': 'Nuro song creation task initiated successfully',
+                    'status': 'pending',
+                    'api_used': 'nuro'  # Indicate which API was used
+                }
+            else:
+                logger.error(f"Error creating song with Nuro API: {response.text}")
+                return {
+                    'error': response.text,
+                    'status': 'failed',
+                    'api_used': 'nuro'
+                }
+                
+        except Exception as e:
+            logger.error(f"Exception creating song with Nuro API: {str(e)}")
+            return {
+                'error': str(e),
+                'status': 'failed',
+                'api_used': 'nuro'
+            }
+    
+    def check_song_status_nuro(self, task_id: str) -> Dict[str, Any]:
+        """
+        Check the status of a Nuro song creation task.
+        
+        Args:
+            task_id: Task ID from Nuro song creation
+            
+        Returns:
+            Response JSON from the API
+        """
+        
+        # Make the API request with DID authentication
+        url = f"{NURO_BASE_URL}/task/{task_id}"
+        logger.info(f"Checking Nuro song status at: {url}")
+        
+        try:
+            # Use headers with DID authentication for status checks
+            response = httpx.get(url, headers=self._get_headers(include_did_auth=True))
+            logger.info(f"Nuro song status check response: {response.status_code}")
+            logger.info(f"Response text: {response.text}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                # Add API identifier to the result
+                result['api_used'] = 'nuro'
+                
+                # Ensure we have a 'state' field for compatibility with the status checking logic
+                # Nuro API uses 'status' instead of 'state'
+                if 'status' in result and 'state' not in result:
+                    result['state'] = result['status']
+                    
+                # Log the status for debugging
+                logger.info(f"Nuro song status: {result.get('status', 'unknown')}, state: {result.get('state', 'unknown')}")
+                
+                return result
+            else:
+                logger.error(f"Error checking Nuro song status: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Exception checking Nuro song status: {str(e)}")
+            return None
     
     def check_song_status(self, task_id: str) -> Dict[str, Any]:
         """

@@ -43,7 +43,7 @@ import time
 import logging
 import httpx
 from typing import Dict, Any, Optional, List, Union
-from src.config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL
+from src.config.config import MUSICAPI_KEY, MUSICAPI_BASE_URL, NURO_BASE_URL
 ```
 
 #### src/supabase_client.py
@@ -104,6 +104,7 @@ The application uses the following environment variables:
 Additional configuration:
 - `OPENAI_MODEL`: Set to "gpt-4o" for supporting structured outputs
 - `MUSICAPI_BASE_URL`: "https://api.musicapi.ai"
+- `NURO_BASE_URL`: "https://api.musicapi.ai/api/v1/nuro"
 - `YONA_PERSONA`: Dictionary defining Yona's personality and style
 - `DEFAULT_SONG_PARAMETERS`: Default parameters for song creation
 
@@ -263,6 +264,8 @@ class MusicAPI:
     def create_song(self, prompt, title=None, style=None, negative_tags=None, make_instrumental=False, 
                    mv='sonic-v4', gpt_description_prompt=None, voice_gender='female')
     def check_song_status(self, task_id)
+    def create_song_nuro(self, lyrics, gender=None, genre=None, mood=None, timbre=None, duration=None)
+    def check_song_status_nuro(self, task_id)
     def create_persona(self, name, description, continue_clip_id=None)
     def create_cover(self, continue_clip_id, prompt, title=None, style=None, negative_tags=None,
                     make_instrumental=False, mv='sonic-v4', gpt_description_prompt=None, voice_gender='female')
@@ -341,8 +344,36 @@ python test_mcp.py
 
 Generates a song concept and lyrics using AI, then creates the song.
 
-Similar parameters to create_song.py, plus:
-- `--prompt`: Concept prompt for generating the song idea
+Parameters:
+- `prompt`: Concept prompt for generating the song idea (required)
+- `--api`: API to use for song generation (choices: 'sonic', 'nuro', default: 'sonic')
+
+Sonic API parameters (used when --api=sonic):
+- `--override-style`: Override LLM-generated style tags
+- `--override-negative-tags`: Override LLM-generated negative tags
+- `--override-instrumental`: Override LLM decision on instrumental (flag)
+- `--override-mv`: Override LLM-generated music video type
+- `--override-description`: Override LLM-generated description
+
+Nuro API parameters (used when --api=nuro):
+- `--gender`: Singer's gender (choices: 'Female', 'Male')
+- `--genre`: Genre of the song (see examples/nuro_api_example.md for options)
+- `--mood`: Mood of the song (see examples/nuro_api_example.md for options)
+- `--timbre`: Timbre of the song (see examples/nuro_api_example.md for options)
+- `--duration`: Duration in seconds, 30-240
+
+Common parameters:
+- `--max-attempts`: Maximum status check attempts (default: 60)
+- `--check-interval`: Seconds between status checks (default: 30)
+
+Example usage:
+```bash
+# Using Sonic API (default)
+python src/generate_song.py "Create a happy pop song about summer adventures"
+
+# Using Nuro API
+python src/generate_song.py "Create a happy pop song about summer adventures" --api nuro --gender Female --genre Pop --mood Happy
+```
 
 ### list_songs.py
 
@@ -472,6 +503,20 @@ run_feedback_processor.bat
    - Improved error handling and logging
    - Added logic to consider a song successful if it has an audio URL even if status is still "pending"
 
+3. Nuro API integration:
+   - Added support for the new Nuro API from MusicAPI.ai
+   - Created new methods in MusicAPI class: create_song_nuro and check_song_status_nuro
+   - Updated generate_song.py to support both APIs with a --api parameter
+   - Implemented automatic fallback to Nuro API when Sonic API is under maintenance
+   - Added parameter mapping to convert Sonic API parameters to Nuro API parameters
+   - Improved status checking logic to handle differences between API response formats
+   - Added compatibility layer to normalize status fields between APIs
+   - Enhanced success detection to consider progress percentage and audio URL availability
+   - Added lyrics truncation to handle the Nuro API's 2000 character limit
+   - Fixed Supabase storage issues by properly handling fields not in the database schema
+   - Added comprehensive documentation and examples for using the Nuro API
+   - Created test scripts to verify the functionality of both APIs
+
 ## 11. Backup Recommendation
 
 To prevent code damage during major changes:
@@ -480,3 +525,40 @@ To prevent code damage during major changes:
 3. Consider using Git tags to mark stable versions
 4. Implement automated tests for core functionality
 5. Document all environment variables and configurations
+
+## 12. Deployment
+
+The application is deployed using Docker containers on a Linode server:
+
+### Server Information
+- **IP Address**: 172-236-28-244
+- **Domain**: yona.club
+- **Operating System**: Ubuntu 22.04 LTS
+
+### Docker Setup
+The application is containerized using Docker and orchestrated with Docker Compose:
+- `Dockerfile`: Defines the application image based on Python
+- `docker-compose.yml`: Defines two services:
+  - **yona-api**: Runs the API server on port 5000
+  - **yona-feedback-processor**: Runs the continuous feedback processor
+
+### Deployment Architecture
+1. The Docker containers run on the Linode server
+2. Nginx serves as a reverse proxy, routing requests from yona.club to the API container
+3. SSL/TLS is provided by Let's Encrypt for secure HTTPS connections
+4. Environment variables are stored in a .env file on the server (not included in the repository)
+5. Logs are stored in the logs/ directory, which is mounted as a volume in the containers
+
+### Deployment Process
+Detailed deployment instructions are available in the DEPLOYMENT_GUIDE.md file, which covers:
+- Setting up the Linode server
+- Installing Docker and Docker Compose
+- Configuring Nginx as a reverse proxy
+- Setting up SSL with Let's Encrypt
+- Monitoring and maintenance procedures
+
+### Accessing the Deployed Application
+- **API Endpoints**: https://yona.club/
+- **Health Check**: https://yona.club/health
+- **Capabilities Document**: https://yona.club/capabilities
+- **DID Document**: https://yona.club/.well-known/did.json

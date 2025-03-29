@@ -14,6 +14,7 @@ OPENAI_MODEL = "gpt-4o"  # GPT-4o supports structured outputs
 # MusicAPI.ai configuration
 MUSICAPI_KEY = os.getenv("MUSICAPI_KEY")
 MUSICAPI_BASE_URL = "https://api.musicapi.ai"
+NURO_BASE_URL = "https://api.musicapi.ai/api/v1/nuro"
 
 # Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -42,4 +43,4 @@ YONA_PERSONA = {
 DEFAULT_SONG_PARAMETERS = {
     "tempo": 120,
     "duration": 180
-} 
+}

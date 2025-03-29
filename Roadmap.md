@@ -193,5 +193,80 @@ This roadmap details how to:
 2. Store music creation history in **Supabase** to refine future outputs.
 3. Integrate Yona with **MusicAPI.ai** for K-pop song generation.
 
-By following these steps, you’ll create a dynamic, evolving AI K-pop star capable of autonomously generating and improving music over time.
+By following these steps, you'll create a dynamic, evolving AI K-pop star capable of autonomously generating and improving music over time.
 
+---
+
+## 7. Nuro API Integration
+
+### Overview
+Integrate the new Nuro API from MusicAPI.ai to provide an alternative song creation method with enhanced parameters and functionality. This will allow Yona to create songs using either the original Sonic API or the new Nuro API based on specific needs and success rates.
+
+### Implementation Steps
+
+1. **Update Configuration**  
+   - Add a new constant `NURO_BASE_URL` in `src/config/config.py` pointing to the Nuro API endpoint
+   - Example: `NURO_BASE_URL = "https://api.musicapi.ai/api/v1/nuro"`
+
+2. **Add New Methods to MusicAPI Class**  
+   - Create a dedicated method for the Nuro API:
+     ```python
+     def create_song_nuro(
+         self,
+         lyrics: str,
+         gender: Optional[str] = None,  # "Female" or "Male"
+         genre: Optional[str] = None,   # From the list of allowed genres
+         mood: Optional[str] = None,    # From the list of allowed moods
+         timbre: Optional[str] = None,  # From the list of allowed timbres
+         duration: Optional[int] = None # Between 30-240 seconds
+     ) -> Dict[str, Any]:
+         # Implementation here
+     ```
+   - Add a status checking method for Nuro songs:
+     ```python
+     def check_song_status_nuro(self, task_id: str) -> Dict[str, Any]:
+         # Implementation here
+     ```
+
+3. **Update Higher-Level Code**  
+   - Modify scripts like `generate_song.py` to provide an option to choose which API to use
+   - Add command-line flags or configuration settings to select the API
+
+4. **Parameter Handling**  
+   - Create utility functions to map between parameter sets if needed
+   - Document the different parameter options for each API
+
+5. **Testing and Validation**  
+   - Create test cases specifically for the Nuro API
+   - Compare results between the two APIs to determine optimal use cases
+
+### Benefits
+
+- **Enhanced Functionality**: Access to additional parameters (gender, genre, mood, timbre, duration) for more control over song generation
+- **Resilience**: Multiple API options provide redundancy if one service is unavailable
+- **Experimentation**: Ability to compare results between APIs to determine which produces better songs for different inputs
+- **Future-Proofing**: Prepared for potential API deprecation or changes
+
+### Example Usage
+
+```python
+# Using the original Sonic API
+song_sonic = music_api.create_song(
+    prompt="Lyrics about summer adventures",
+    title="Summer Days",
+    style="kpop, upbeat",
+    voice_gender="female"
+)
+
+# Using the new Nuro API
+song_nuro = music_api.create_song_nuro(
+    lyrics="Lyrics about summer adventures",
+    gender="Female",
+    genre="Pop",
+    mood="Happy",
+    timbre="Bright",
+    duration=180
+)
+```
+
+This integration will expand Yona's capabilities by providing more options for song creation and greater control over the generated music.

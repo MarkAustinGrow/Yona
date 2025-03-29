@@ -37,12 +37,25 @@ def parse_arguments():
     # Required arguments
     parser.add_argument('prompt', help='Prompt describing the song to create')
     
-    # Optional arguments - now used to override LLM-generated parameters if desired
-    parser.add_argument('--override-style', help='Override LLM-generated style tags')
-    parser.add_argument('--override-negative-tags', help='Override LLM-generated negative tags')
-    parser.add_argument('--override-instrumental', action='store_true', help='Override LLM decision on instrumental')
-    parser.add_argument('--override-mv', help='Override LLM-generated music video type')
-    parser.add_argument('--override-description', help='Override LLM-generated description')
+    # API selection
+    parser.add_argument('--api', choices=['sonic', 'nuro'], default='sonic', 
+                        help='API to use for song generation (default: sonic)')
+    
+    # Sonic API parameters (used when --api=sonic)
+    parser.add_argument('--override-style', help='Override LLM-generated style tags (Sonic API)')
+    parser.add_argument('--override-negative-tags', help='Override LLM-generated negative tags (Sonic API)')
+    parser.add_argument('--override-instrumental', action='store_true', help='Override LLM decision on instrumental (Sonic API)')
+    parser.add_argument('--override-mv', help='Override LLM-generated music video type (Sonic API)')
+    parser.add_argument('--override-description', help='Override LLM-generated description (Sonic API)')
+    
+    # Nuro API parameters (used when --api=nuro)
+    parser.add_argument('--gender', choices=['Female', 'Male'], help="Singer's gender (Nuro API)")
+    parser.add_argument('--genre', help="Genre of the song (Nuro API)")
+    parser.add_argument('--mood', help="Mood of the song (Nuro API)")
+    parser.add_argument('--timbre', help="Timbre of the song (Nuro API)")
+    parser.add_argument('--duration', type=int, help="Duration in seconds, 30-240 (Nuro API)")
+    
+    # Common parameters
     parser.add_argument('--max-attempts', type=int, default=60, help='Maximum number of status check attempts')
     parser.add_argument('--check-interval', type=int, default=30, help='Time in seconds between status checks')
     
@@ -131,18 +144,84 @@ def main():
         # Initialize MusicAPI
         music_api = MusicAPI()
         
-        # Create the song with hard-coded female voice
-        logger.info(f"Creating song: {title}")
-        result = music_api.create_song(
-            prompt=lyrics,
-            title=title,
-            style=style_tags,
-            negative_tags=negative_tags,
-            make_instrumental=make_instrumental,
-            mv=mv_type,
-            gpt_description_prompt=description[:199],  # Limit to 199 characters
-            voice_gender="female"  # Hard-coded as female
-        )
+        # Create the song using the selected API
+        logger.info(f"Creating song: {title} using {args.api.upper()} API")
+        
+        if args.api == 'nuro':
+            # Use Nuro API
+            result = music_api.create_song_nuro(
+                lyrics=lyrics,
+                gender=args.gender,
+                genre=args.genre,
+                mood=args.mood,
+                timbre=args.timbre,
+                duration=args.duration
+            )
+        else:
+            # Use Sonic API (default)
+            result = music_api.create_song(
+                prompt=lyrics,
+                title=title,
+                style=style_tags,
+                negative_tags=negative_tags,
+                make_instrumental=make_instrumental,
+                mv=mv_type,
+                gpt_description_prompt=description[:199],  # Limit to 199 characters
+                voice_gender="female"  # Hard-coded as female
+            )
+            
+            # Check if Sonic API is under maintenance, if so, fall back to Nuro API
+            if result.get('status') == 'failed' and 'maintenance' in str(result.get('error', '')).lower():
+                logger.warning("Sonic API is under maintenance, falling back to Nuro API")
+                
+                # Determine gender from voice_gender parameter
+                voice_gender = "female"  # This was hard-coded above
+                gender = "Female" if "female" in voice_gender.lower() else "Male"
+                
+                # Map style_tags to genre and mood if possible
+                genre = "Pop"  # Default genre
+                mood = "Happy"  # Default mood
+                
+                if style_tags:
+                    style_lower = style_tags.lower()
+                    # Simple mapping of common styles to genres
+                    if "rock" in style_lower:
+                        genre = "Rock"
+                    elif "pop" in style_lower:
+                        genre = "Pop"
+                    elif "hip hop" in style_lower or "rap" in style_lower:
+                        genre = "Hip Hop/Rap"
+                    elif "r&b" in style_lower or "soul" in style_lower:
+                        genre = "R&B/Soul"
+                    elif "electronic" in style_lower:
+                        genre = "Electronic"
+                    
+                    # Simple mapping of common styles to moods
+                    if "upbeat" in style_lower or "happy" in style_lower:
+                        mood = "Happy"
+                    elif "energetic" in style_lower or "dynamic" in style_lower:
+                        mood = "Dynamic/Energetic"
+                    elif "sad" in style_lower or "melancholic" in style_lower:
+                        mood = "Sentimental/Melancholic/Lonely"
+                    elif "chill" in style_lower or "relaxing" in style_lower:
+                        mood = "Chill"
+                
+                # Use Nuro API as fallback
+                logger.info(f"Falling back to Nuro API with genre={genre}, mood={mood}, gender={gender}")
+                result = music_api.create_song_nuro(
+                    lyrics=lyrics,
+                    gender=gender,
+                    genre=genre,
+                    mood=mood,
+                    timbre=None,  # Use default
+                    duration=None  # Use default
+                )
+                
+                # Update args to reflect the fallback parameters for later use in params_used
+                args.api = 'nuro'
+                args.gender = gender
+                args.genre = genre
+                args.mood = mood
         
         # Clean up the temporary lyrics file
         try:
@@ -171,19 +250,44 @@ def main():
         check_interval = args.check_interval
         song_data = None
         
+        # Determine which API was used
+        is_nuro_api = args.api == 'nuro' or result.get('api_used') == 'nuro'
+        
         while status != "succeeded" and status != "failed" and attempt <= max_attempts:
             logger.info(f"Checking song status (attempt {attempt}/{max_attempts})...")
-            status_response = music_api.check_song_status(task_id)
             
-            # Get the first item in the data array (assuming it's the main song)
-            if status_response and 'data' in status_response and len(status_response['data']) > 0:
-                song_data = status_response['data'][0]
-                status = song_data.get('state', 'unknown')
-                
-                # If we have audio_url but status is still pending, we can proceed
-                if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
-                    logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
-                    status = "succeeded"
+            # Use the appropriate status checking method based on the API
+            if is_nuro_api:
+                status_response = music_api.check_song_status_nuro(task_id)
+            else:
+                status_response = music_api.check_song_status(task_id)
+            
+            if is_nuro_api:
+                # Handle Nuro API response format
+                if status_response:
+                    song_data = status_response
+                    # Check both 'state' and 'status' fields (Nuro API uses 'status')
+                    status = song_data.get('state', song_data.get('status', 'unknown'))
+                    
+                    # If we have audio_url but status is still pending, we can proceed
+                    if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                        logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                        status = "succeeded"
+                    
+                    # If progress is 100%, consider it succeeded regardless of status
+                    if song_data.get('progress') == 100:
+                        logger.info("Song progress is 100%, considering it successful.")
+                        status = "succeeded"
+            else:
+                # Handle Sonic API response format
+                if status_response and 'data' in status_response and len(status_response['data']) > 0:
+                    song_data = status_response['data'][0]
+                    status = song_data.get('state', 'unknown')
+                    
+                    # If we have audio_url but status is still pending, we can proceed
+                    if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                        logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                        status = "succeeded"
             
             if status not in ["succeeded", "failed"]:
                 logger.info(f"Song is still being processed (attempt {attempt}/{max_attempts})...")
@@ -213,18 +317,32 @@ def main():
             supabase_client = SupabaseClient()
             
             # Create a params_used object with all parameters
-            params_used = {
-                'prompt': lyrics,
-                'title': title,
-                'style': style_tags,
-                'negative_tags': negative_tags,
-                'make_instrumental': make_instrumental,
-                'mv': mv_type,
-                'gpt_description_prompt': description[:199] if description else None,
-                'voice_gender': 'female',  # Hard-coded as female
-                'original_prompt': args.prompt,
-                'concept': concept  # Include the full LLM-generated concept
-            }
+            if is_nuro_api:
+                # Nuro API parameters
+                params_used = {
+                    'api_used': 'nuro',
+                    'lyrics': lyrics,
+                    'gender': args.gender,
+                    'genre': args.genre,
+                    'mood': args.mood,
+                    'timbre': args.timbre,
+                    'duration': args.duration,
+                    'prompt': args.prompt  # Store the prompt in a field that exists in the DB schema
+                }
+            else:
+                # Sonic API parameters
+                params_used = {
+                    'api_used': 'sonic',
+                    'prompt': lyrics,
+                    'title': title,
+                    'style': style_tags,
+                    'negative_tags': negative_tags,
+                    'make_instrumental': make_instrumental,
+                    'mv': mv_type,
+                    'gpt_description_prompt': description[:199] if description else None,
+                    'voice_gender': 'female',  # Hard-coded as female
+                    'user_prompt': args.prompt  # Store the prompt in a field that exists in the DB schema
+                }
             
             # Prepare song data for storage
             song_data_for_db = {
@@ -239,11 +357,18 @@ def main():
                 'gpt_description': description[:199],
                 'negative_tags': negative_tags,
                 'duration': duration,
-                'original_prompt': args.prompt,
-                'song_concept': json.dumps(concept),
                 'persona_id': 'direct_generation',  # Use direct_generation as we're not using a persona
-                'params_used': params_used  # Add the params_used field
+                'params_used': params_used,  # Add the params_used field
+                'api_used': 'nuro' if is_nuro_api else 'sonic'  # Add the api_used field
             }
+            
+            # Add Nuro-specific fields if using Nuro API
+            if is_nuro_api and song_data:
+                # Extract Nuro-specific fields from the response
+                song_data_for_db['gender'] = song_data.get('gender')
+                song_data_for_db['genre'] = song_data.get('genre')
+                song_data_for_db['mood'] = song_data.get('mood')
+                song_data_for_db['timbre'] = song_data.get('timbre')
             
             # Store song data in Supabase
             db_song_id = supabase_client.store_song_data(song_data_for_db)
