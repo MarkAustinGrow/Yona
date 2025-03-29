@@ -91,8 +91,8 @@ def modify_parameters_with_openai(original_params, feedback_comment, openai_clie
     modified_params = json.loads(response.choices[0].message.content)
     
     # Validate and fix the mv field if needed
+    valid_mv_values = ['sonic-v3-5', 'sonic-v4']
     if 'mv' in modified_params:
-        valid_mv_values = ['sonic-v3-5', 'sonic-v4']
         if modified_params['mv'] not in valid_mv_values:
             # Default to sonic-v4 if an invalid value is provided
             original_mv = modified_params['mv']
@@ -100,6 +100,12 @@ def modify_parameters_with_openai(original_params, feedback_comment, openai_clie
             warning_msg = f"Warning: Invalid mv value '{original_mv}' was changed to 'sonic-v4'"
             logger.warning(warning_msg)
             print(warning_msg)
+    else:
+        # If mv field is missing, add it with default value
+        modified_params['mv'] = 'sonic-v4'
+        warning_msg = "Warning: Missing mv field was added with default value 'sonic-v4'"
+        logger.warning(warning_msg)
+        print(warning_msg)
     
     return modified_params
 
