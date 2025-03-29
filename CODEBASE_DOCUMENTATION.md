@@ -448,7 +448,76 @@ run_feedback_processor.bat
    - Enables secure, authenticated communication between agents
    - Implemented using the Model Context Protocol framework
 
-## 9. Data Flow
+## 9. API Options
+
+The system supports two different APIs for song generation, each with its own strengths and parameters:
+
+### Sonic API
+
+The original API used by the Yona project, with the following parameters:
+- `prompt`: Lyrics or text prompt for the song
+- `title`: Title of the song
+- `style`: Style tags for the song (e.g., "pop, upbeat, summer")
+- `negative_tags`: Tags to avoid in generation
+- `make_instrumental`: Whether the song should be instrumental
+- `mv`: Music video generation type (sonic-v3-5 or sonic-v4)
+- `gpt_description_prompt`: Additional description for guiding generation
+- `voice_gender`: Gender of the singer's voice (female or male)
+
+Example usage:
+```bash
+# Using Sonic API (default)
+python src/generate_song.py "Create a happy pop song about summer adventures"
+
+# With additional Sonic API parameters
+python src/generate_song.py "Create a happy pop song about summer adventures" \
+  --override-style "pop, upbeat, summer" \
+  --override-negative-tags "sad, melancholic" \
+  --override-instrumental \
+  --override-mv "sonic-v4" \
+  --override-description "A cheerful summer pop song with upbeat vibes"
+```
+
+### Nuro API
+
+A newer API that provides more specific control over song parameters:
+- `lyrics`: Lyrics for the song
+- `gender`: Singer's gender (Female or Male)
+- `genre`: Genre of the song (Pop, Rock, Folk, etc.)
+- `mood`: Mood of the song (Happy, Sad, Energetic, etc.)
+- `timbre`: Timbre of the singer's voice (Warm, Bright, Husky, etc.)
+- `duration`: Duration in seconds (30-240)
+
+Example usage:
+```bash
+# Using Nuro API
+python src/generate_song.py "Create a happy pop song about summer adventures" --api nuro
+
+# With additional Nuro API parameters
+python src/generate_song.py "Create a happy pop song about summer adventures" \
+  --api nuro \
+  --gender "Female" \
+  --genre "Pop" \
+  --mood "Happy" \
+  --timbre "Bright" \
+  --duration 180
+```
+
+### Automatic Fallback Mechanism
+
+The system includes an automatic fallback mechanism that switches to the Nuro API if the Sonic API is under maintenance:
+
+1. When the Sonic API returns a maintenance error, the system automatically falls back to the Nuro API
+2. The system maps Sonic API parameters to Nuro API parameters:
+   - `voice_gender` → `gender` (Female/Male)
+   - `style_tags` → `genre` and `mood` (using intelligent mapping)
+3. The fallback is logged for transparency
+4. The song is created using the Nuro API with the mapped parameters
+5. All subsequent status checks use the Nuro API methods
+
+This ensures continuous operation even when one API is unavailable, making the system more resilient.
+
+## 10. Data Flow
 
 ### Traditional Workflow (create_song.py)
 1. User provides a song title and lyrics/prompt via command line
@@ -490,7 +559,7 @@ run_feedback_processor.bat
    - The feedback is marked as processed
 5. The processor_did field allows tracking which agent processed each feedback
 
-## 10. Recently Fixed Issues
+## 11. Recently Fixed Issues
 
 1. Database schema compatibility issue:
    - The code was attempting to store a `clip_id` field that didn't exist in the Supabase schema
@@ -503,21 +572,7 @@ run_feedback_processor.bat
    - Improved error handling and logging
    - Added logic to consider a song successful if it has an audio URL even if status is still "pending"
 
-3. Nuro API integration:
-   - Added support for the new Nuro API from MusicAPI.ai
-   - Created new methods in MusicAPI class: create_song_nuro and check_song_status_nuro
-   - Updated generate_song.py to support both APIs with a --api parameter
-   - Implemented automatic fallback to Nuro API when Sonic API is under maintenance
-   - Added parameter mapping to convert Sonic API parameters to Nuro API parameters
-   - Improved status checking logic to handle differences between API response formats
-   - Added compatibility layer to normalize status fields between APIs
-   - Enhanced success detection to consider progress percentage and audio URL availability
-   - Added lyrics truncation to handle the Nuro API's 2000 character limit
-   - Fixed Supabase storage issues by properly handling fields not in the database schema
-   - Added comprehensive documentation and examples for using the Nuro API
-   - Created test scripts to verify the functionality of both APIs
-
-## 11. Backup Recommendation
+## 12. Backup Recommendation
 
 To prevent code damage during major changes:
 1. Commit changes frequently with descriptive messages
@@ -526,7 +581,7 @@ To prevent code damage during major changes:
 4. Implement automated tests for core functionality
 5. Document all environment variables and configurations
 
-## 12. Deployment
+## 13. Deployment
 
 The application is deployed using Docker containers on a Linode server:
 

@@ -51,6 +51,9 @@ def modify_parameters_with_openai(original_params, feedback_comment, openai_clie
     used to create a song, along with feedback about the song. Your task is to modify 
     the parameters to address the feedback while keeping the core identity of the song.
     
+    IMPORTANT: For the 'mv' field, you MUST only use one of these valid values: 'sonic-v3-5' or 'sonic-v4'.
+    Any other value will cause an error. If you're unsure, use 'sonic-v4'.
+    
     Return a JSON object with the modified parameters. Include all original parameters 
     with appropriate modifications based on the feedback.
     """
@@ -78,6 +81,17 @@ def modify_parameters_with_openai(original_params, feedback_comment, openai_clie
     
     # Parse the response
     modified_params = json.loads(response.choices[0].message.content)
+    
+    # Validate and fix the mv field if needed
+    if 'mv' in modified_params:
+        valid_mv_values = ['sonic-v3-5', 'sonic-v4']
+        if modified_params['mv'] not in valid_mv_values:
+            # Default to sonic-v4 if an invalid value is provided
+            original_mv = modified_params['mv']
+            modified_params['mv'] = 'sonic-v4'
+            warning_msg = f"Warning: Invalid mv value '{original_mv}' was changed to 'sonic-v4'"
+            logger.warning(warning_msg)
+            print(warning_msg)
     
     return modified_params
 
@@ -324,6 +338,17 @@ def main():
     
     # Share DID manager with MusicAPI for authentication
     music_api.did_manager = agent.did_manager
+    
+    # Add Supabase log handler
+    try:
+        from src.logging_utils import SupabaseLogHandler
+        supabase_handler = SupabaseLogHandler(supabase_client)
+        supabase_handler.setLevel(logging.INFO)  # Only log INFO and above
+        supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(supabase_handler)
+        logger.info("Supabase log handler initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Supabase log handler: {str(e)}")
     
     # Define the log cleanup task
     def log_cleanup_task():

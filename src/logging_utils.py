@@ -23,8 +23,13 @@ class SupabaseLogHandler(logging.Handler):
             if record.exc_info:
                 exc_info = self.formatter.formatException(record.exc_info)
             
+            # Convert record created time to ISO format
+            from datetime import datetime
+            timestamp = datetime.fromtimestamp(record.created).isoformat()
+            
             # Format the log message
             log_entry = {
+                "timestamp": timestamp,  # Add timestamp field
                 "level": record.levelname,
                 "source": record.name,
                 "message": self.format(record),
