@@ -51,7 +51,15 @@ def modify_parameters_with_openai(original_params, feedback_comment, openai_clie
     used to create a song, along with feedback about the song. Your task is to modify 
     the parameters to address the feedback while keeping the core identity of the song.
     
-    IMPORTANT: For the 'mv' field, you MUST only use one of these valid values: 'sonic-v3-5' or 'sonic-v4'.
+    The song may have been created using one of two APIs:
+    1. Sonic API - Uses parameters like style, negative_tags, make_instrumental, mv, gpt_description_prompt
+    2. Nuro API - Uses parameters like gender, genre, mood, timbre, duration
+    
+    If the original parameters include 'api_used' with value 'nuro', make sure to include and modify
+    the Nuro-specific parameters (gender, genre, mood, timbre). If 'api_used' is 'sonic' or not specified,
+    focus on the Sonic API parameters.
+    
+    IMPORTANT: For the 'mv' field in Sonic API, you MUST only use one of these valid values: 'sonic-v3-5' or 'sonic-v4'.
     Any other value will cause an error. If you're unsure, use 'sonic-v4'.
     
     Return a JSON object with the modified parameters. Include all original parameters 
@@ -171,22 +179,98 @@ def process_feedback(feedback, agent, music_api, supabase_client):
         
         logger.info(f"Modified parameters: {json.dumps(modified_params, indent=2)}")
         
+        # Determine which API to use based on modified parameters
+        api_used = modified_params.get('api_used', 'sonic')
+        is_nuro_api = False
+        
         # Create a new song with the modified parameters
-        logger.info("Creating new song with modified parameters")
-        result = music_api.create_song(
-            prompt=modified_params.get('prompt', original_song.get('lyrics')),
-            title=modified_params.get('title', original_song.get('title')),
-            style=modified_params.get('style', original_song.get('style')),
-            negative_tags=modified_params.get('negative_tags'),
-            make_instrumental=modified_params.get('make_instrumental', False),
-            mv=modified_params.get('mv', 'sonic-v4'),
-            gpt_description_prompt=modified_params.get('gpt_description_prompt'),
-            voice_gender='female'  # Hard-coded as female
-        )
+        logger.info(f"Creating new song with modified parameters using {api_used.upper()} API")
+        
+        if api_used == 'nuro':
+            # Use Nuro API directly if specified in parameters
+            is_nuro_api = True
+            result = music_api.create_song_nuro(
+                lyrics=modified_params.get('prompt', original_song.get('lyrics')),
+                gender=modified_params.get('gender', 'Female'),
+                genre=modified_params.get('genre', 'Pop'),
+                mood=modified_params.get('mood', 'Happy'),
+                timbre=modified_params.get('timbre'),
+                duration=modified_params.get('duration')
+            )
+        else:
+            # Try Sonic API first
+            logger.info("Creating new song with modified parameters using SONIC API")
+            result = music_api.create_song(
+                prompt=modified_params.get('prompt', original_song.get('lyrics')),
+                title=modified_params.get('title', original_song.get('title')),
+                style=modified_params.get('style', original_song.get('style')),
+                negative_tags=modified_params.get('negative_tags'),
+                make_instrumental=modified_params.get('make_instrumental', False),
+                mv=modified_params.get('mv', 'sonic-v4'),
+                gpt_description_prompt=modified_params.get('gpt_description_prompt'),
+                voice_gender='female'  # Hard-coded as female
+            )
         
         if result.get('status') == 'failed':
-            logger.error(f"Failed to create song: {result.get('error')}")
-            return False
+            # Check if Sonic API is under maintenance
+            if isinstance(result.get('error'), str) and 'maintenance' in result.get('error'):
+                logger.warning("Sonic API is under maintenance. Falling back to Nuro API.")
+                
+                # Map Sonic parameters to Nuro parameters
+                gender = 'Female'  # Default to female voice
+                if modified_params.get('voice_gender') == 'male':
+                    gender = 'Male'
+                
+                # Extract genre and mood from style if possible
+                style = modified_params.get('style', '')
+                genre = 'Pop'  # Default genre
+                mood = 'Happy'  # Default mood
+                
+                # Simple mapping of common styles to genre/mood
+                if 'rock' in style.lower():
+                    genre = 'Rock'
+                elif 'pop' in style.lower():
+                    genre = 'Pop'
+                elif 'folk' in style.lower():
+                    genre = 'Folk'
+                
+                if 'happy' in style.lower() or 'upbeat' in style.lower():
+                    mood = 'Happy'
+                elif 'sad' in style.lower() or 'melancholic' in style.lower():
+                    mood = 'Sad'
+                elif 'energetic' in style.lower():
+                    mood = 'Energetic'
+                
+                # Try using Nuro API instead
+                is_nuro_api = True
+                result = music_api.create_song_nuro(
+                    lyrics=modified_params.get('prompt', original_song.get('lyrics')),
+                    gender=gender,
+                    genre=genre,
+                    mood=mood,
+                    timbre=None,  # No direct mapping
+                    duration=None  # Use default duration
+                )
+                
+                # Update modified_params to reflect the API change
+                modified_params['api_used'] = 'nuro'
+                modified_params['gender'] = gender
+                modified_params['genre'] = genre
+                modified_params['mood'] = mood
+                
+                logger.info(f"Fallback to Nuro API with parameters: gender={gender}, genre={genre}, mood={mood}")
+                
+                # Check if the fallback also failed
+                if result.get('status') == 'failed':
+                    logger.error(f"Failed to create song with Nuro API fallback: {result.get('error')}")
+                    return False
+            else:
+                logger.error(f"Failed to create song: {result.get('error')}")
+                return False
+            
+        # Update is_nuro_api based on the result
+        if result.get('api_used') == 'nuro':
+            is_nuro_api = True
             
         logger.info(f"Song creation initiated: {result}")
         
@@ -206,17 +290,38 @@ def process_feedback(feedback, agent, music_api, supabase_client):
         
         while status != "succeeded" and status != "failed" and attempt <= max_attempts:
             logger.info(f"Checking song status (attempt {attempt}/{max_attempts})...")
-            status_response = music_api.check_song_status(task_id)
             
-            # Get the first item in the data array (assuming it's the main song)
-            if status_response and 'data' in status_response and len(status_response['data']) > 0:
-                song_data = status_response['data'][0]
-                status = song_data.get('state', 'unknown')
+            # Use the appropriate status checking method based on the API
+            if is_nuro_api:
+                status_response = music_api.check_song_status_nuro(task_id)
                 
-                # If we have audio_url but status is still pending, we can proceed
-                if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
-                    logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
-                    status = "succeeded"
+                # Handle Nuro API response format
+                if status_response:
+                    song_data = status_response
+                    # Check both 'state' and 'status' fields (Nuro API uses 'status')
+                    status = song_data.get('state', song_data.get('status', 'unknown'))
+                    
+                    # If we have audio_url but status is still pending, we can proceed
+                    if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                        logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                        status = "succeeded"
+                    
+                    # If progress is 100%, consider it succeeded regardless of status
+                    if song_data.get('progress') == 100:
+                        logger.info("Song progress is 100%, considering it successful.")
+                        status = "succeeded"
+            else:
+                status_response = music_api.check_song_status(task_id)
+                
+                # Handle Sonic API response format
+                if status_response and 'data' in status_response and len(status_response['data']) > 0:
+                    song_data = status_response['data'][0]
+                    status = song_data.get('state', 'unknown')
+                    
+                    # If we have audio_url but status is still pending, we can proceed
+                    if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                        logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                        status = "succeeded"
             
             if status not in ["succeeded", "failed"]:
                 logger.info(f"Song is still being processed (attempt {attempt}/{max_attempts})...")
@@ -240,6 +345,9 @@ def process_feedback(feedback, agent, music_api, supabase_client):
                 description = modified_params.get('gpt_description_prompt')
                 description = (description or '')[:199]  # Slice to 199 chars max
                 
+                # Determine which API was used
+                api_used = modified_params.get('api_used', 'sonic')
+                
                 # Prepare song data for database
                 song_data_for_db = {
                     'title': modified_params.get('title', original_song.get('title')),
@@ -257,8 +365,16 @@ def process_feedback(feedback, agent, music_api, supabase_client):
                     # Removed feedback_id as it doesn't exist in the songs table
                     'persona_id': 'direct_generation',
                     'params_used': modified_params,
-                    'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None
+                    'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None,
+                    'api_used': api_used
                 }
+                
+                # Add Nuro-specific fields if using Nuro API
+                if api_used == 'nuro':
+                    song_data_for_db['gender'] = modified_params.get('gender')
+                    song_data_for_db['genre'] = modified_params.get('genre')
+                    song_data_for_db['mood'] = modified_params.get('mood')
+                    song_data_for_db['timbre'] = modified_params.get('timbre')
                 
                 # Store song data in Supabase
                 db_song_id = supabase_client.store_song_data(song_data_for_db)
