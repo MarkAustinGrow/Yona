@@ -7,6 +7,8 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - TZ=Europe/London
     command: python run_api_server.py --host 0.0.0.0 --port 5000
     restart: unless-stopped
     volumes:
@@ -16,6 +18,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      - TZ=Europe/London
     command: python src/continuous_feedback_processor.py
     restart: unless-stopped
     volumes:
