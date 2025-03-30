@@ -12,9 +12,10 @@ class SupabaseLogHandler(logging.Handler):
     """
     Custom logging handler that sends logs to a Supabase table.
     """
-    def __init__(self, supabase_client):
+    def __init__(self, supabase_client, container=None):
         super().__init__()
         self.supabase = supabase_client
+        self.container = container
         
     def emit(self, record):
         try:
@@ -37,7 +38,8 @@ class SupabaseLogHandler(logging.Handler):
                     "lineno": record.lineno,
                     "funcName": record.funcName,
                     "pathname": record.pathname,
-                    "exc_info": exc_info
+                    "exc_info": exc_info,
+                    "container": self.container  # Add container identifier
                 }
             }
             

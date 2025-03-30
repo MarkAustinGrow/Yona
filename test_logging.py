@@ -41,7 +41,7 @@ def main():
     
     # Add Supabase log handler
     try:
-        supabase_handler = SupabaseLogHandler(supabase_client)
+        supabase_handler = SupabaseLogHandler(supabase_client, container="test-logging")
         supabase_handler.setLevel(logging.INFO)
         supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
         logger.addHandler(supabase_handler)

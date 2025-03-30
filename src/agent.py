@@ -81,7 +81,7 @@ class YonaAgent:
         # Add Supabase log handler
         try:
             from src.logging_utils import SupabaseLogHandler
-            supabase_handler = SupabaseLogHandler(self.supabase_client)
+            supabase_handler = SupabaseLogHandler(self.supabase_client, container="yona-api")
             supabase_handler.setLevel(logging.INFO)  # Only log INFO and above
             supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
             logger.addHandler(supabase_handler)

@@ -464,11 +464,18 @@ def main():
     # Add Supabase log handler
     try:
         from src.logging_utils import SupabaseLogHandler
-        supabase_handler = SupabaseLogHandler(supabase_client)
+        supabase_handler = SupabaseLogHandler(supabase_client, container="feedback-processor")
         supabase_handler.setLevel(logging.INFO)  # Only log INFO and above
         supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        
+        # Add to the current logger
         logger.addHandler(supabase_handler)
-        logger.info("Supabase log handler initialized")
+        
+        # Also add to the root logger to capture all logs
+        root_logger = logging.getLogger()
+        root_logger.addHandler(supabase_handler)
+        
+        logger.info("Supabase log handler initialized for all loggers")
     except Exception as e:
         logger.error(f"Failed to initialize Supabase log handler: {str(e)}")
     
