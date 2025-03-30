@@ -540,9 +540,8 @@ def main():
                 logger.exception("Exception details:")
                 print(f"Error retrieving or processing feedback: {str(e)}")
             
-            next_run_time = datetime.fromtimestamp(time.time() + interval).strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"Next processing cycle will run at {next_run_time}")
-            print(f"Next processing cycle will run at {next_run_time}")
+            logger.info(f"Next processing cycle will run in 1 hour")
+            print(f"Next processing cycle will run in 1 hour")
             
             # Run any pending scheduled tasks
             schedule.run_pending()
