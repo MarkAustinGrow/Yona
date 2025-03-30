@@ -19,6 +19,10 @@ class SupabaseLogHandler(logging.Handler):
         
     def emit(self, record):
         try:
+            # Skip httpx logs to prevent recursive logging
+            if record.name == 'httpx':
+                return
+                
             # Extract exception info if present
             exc_info = None
             if record.exc_info:
