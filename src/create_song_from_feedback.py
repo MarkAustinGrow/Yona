@@ -155,7 +155,8 @@ def main():
                 genre=modified_params.get('genre', 'Pop'),
                 mood=modified_params.get('mood', 'Happy'),
                 timbre=modified_params.get('timbre'),
-                duration=modified_params.get('duration')
+                duration=modified_params.get('duration'),
+                mv='sonic-v4'  # Always generate video with Nuro API
             )
         else:
             # Use Sonic API

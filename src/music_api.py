@@ -172,7 +172,8 @@ class MusicAPI:
         genre: Optional[str] = None,
         mood: Optional[str] = None,
         timbre: Optional[str] = None,
-        duration: Optional[int] = None
+        duration: Optional[int] = None,
+        mv: str = 'sonic-v4'
     ) -> Dict[str, Any]:
         """
         Create a song using the Nuro API.
@@ -184,6 +185,7 @@ class MusicAPI:
             mood: The mood of the song (from allowed values)
             timbre: The timbre of the song (from allowed values)
             duration: Duration of the song in seconds (30-240)
+            mv: Music video generation type (default: 'sonic-v4')
             
         Returns:
             Dictionary with task_id, message, and status
@@ -209,7 +211,8 @@ class MusicAPI:
             lyrics = truncated_lyrics
             
         payload = {
-            'lyrics': lyrics
+            'lyrics': lyrics,
+            'mv': mv
         }
         
         # Add optional parameters if provided
@@ -251,7 +254,8 @@ class MusicAPI:
                     'task_id': task_id,
                     'message': 'Nuro song creation task initiated successfully',
                     'status': 'pending',
-                    'api_used': 'nuro'  # Indicate which API was used
+                    'api_used': 'nuro',
+                    'mv': mv
                 }
             else:
                 logger.error(f"Error creating song with Nuro API: {response.text}")

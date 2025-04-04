@@ -297,7 +297,8 @@ Final thoughts about {theme}
                     genre=genre,
                     mood=mood,
                     timbre=timbre,
-                    duration=duration
+                    duration=duration,
+                    mv=mv  # Pass the mv parameter to ensure video generation
                 )
             else:
                 # Use Sonic API

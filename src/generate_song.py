@@ -155,7 +155,8 @@ def main():
                 genre=args.genre,
                 mood=args.mood,
                 timbre=args.timbre,
-                duration=args.duration
+                duration=args.duration,
+                mv='sonic-v4'  # Always generate video with Nuro API
             )
         else:
             # Use Sonic API (default)

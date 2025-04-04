@@ -292,3 +292,53 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Error storing song version: {str(e)}")
             return None
+    
+    def get_unprocessed_influence_music(self, limit: int = 1) -> List[Dict[str, Any]]:
+        """
+        Get unprocessed influence_music records (those with NULL song_id).
+        
+        Args:
+            limit: Maximum number of records to return
+            
+        Returns:
+            List of unprocessed influence_music records
+        """
+        try:
+            response = self.client.table("influence_music").select("*").is_("song_id", "null").limit(limit).execute()
+            
+            if response.data:
+                logger.info(f"Found {len(response.data)} unprocessed influence_music records")
+                return response.data
+            else:
+                logger.info("No unprocessed influence_music records found")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Error getting unprocessed influence_music records: {str(e)}")
+            return []
+    
+    def mark_influence_music_processed(self, record_id: str, song_id: str) -> bool:
+        """
+        Mark an influence_music record as processed by setting its song_id.
+        
+        Args:
+            record_id: ID of the record to mark as processed
+            song_id: ID of the song created from this record
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Update the song_id field
+            response = self.client.table("influence_music").update({"song_id": song_id}).eq("id", record_id).execute()
+            
+            if response.data:
+                logger.info(f"Influence music record {record_id} marked as processed with song_id {song_id}")
+                return True
+            else:
+                logger.warning(f"Failed to mark influence music record {record_id} as processed")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error marking influence music record as processed: {str(e)}")
+            return False

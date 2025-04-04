@@ -444,142 +444,405 @@ def process_feedback(feedback, agent, music_api, supabase_client):
         logger.exception("Exception details:")
         return False
 
-def main():
-    """Main function to continuously process feedback."""
-    # Load environment variables
-    load_dotenv()
+def process_influence_music(record, agent, music_api, supabase_client):
+    """
+    Process a single influence_music record with OpenAI assistance.
     
-    logger.info("Starting continuous feedback processor")
-    print("Starting continuous feedback processor...")
-    print("Press Ctrl+C to stop")
-    
-    # Initialize clients
-    supabase_client = SupabaseClient()
-    agent = YonaAgent(did_domain="yona.ai")
-    music_api = MusicAPI()
-    
-    # Share DID manager with MusicAPI for authentication
-    music_api.did_manager = agent.did_manager
-    
-    # Add Supabase log handler
+    Args:
+        record: Influence music record
+        agent: YonaAgent instance
+        music_api: MusicAPI instance
+        supabase_client: SupabaseClient instance
+        
+    Returns:
+        True if successful, False otherwise
+    """
     try:
-        from src.logging_utils import SupabaseLogHandler
-        supabase_handler = SupabaseLogHandler(supabase_client, container="feedback-processor")
-        supabase_handler.setLevel(logging.INFO)  # Only log INFO and above
-        supabase_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        record_id = record['id']
+        url = record.get('url', '')
+        analysis = record.get('analysis', {})
         
-        # Add to the current logger
-        logger.addHandler(supabase_handler)
+        # Extract parameters from analysis
+        bpm = analysis.get('bpm')
+        key = analysis.get('key')
+        moods = []
         
-        # Also add to the root logger to capture all logs
-        root_logger = logging.getLogger()
-        root_logger.addHandler(supabase_handler)
+        # Extract moods and their scores from the analysis
+        if 'moods' in analysis and isinstance(analysis['moods'], list):
+            for mood_obj in analysis['moods']:
+                if isinstance(mood_obj, dict):
+                    mood_name = mood_obj.get('name')
+                    mood_score = mood_obj.get('score', 0)
+                    if mood_name and mood_score >= 50:  # Only use moods with score >= 50
+                        moods.append(mood_name)
         
-        logger.info("Supabase log handler initialized for all loggers")
-    except Exception as e:
-        logger.error(f"Failed to initialize Supabase log handler: {str(e)}")
-    
-    # Define the log cleanup task
-    def log_cleanup_task():
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[{current_time}] Running scheduled log cleanup")
+        # Get the highest scoring mood as the primary mood
+        primary_mood = moods[0] if moods else 'Energetic'  # Default to Energetic if no moods found
+        
+        logger.info(f"Processing influence music record {record_id}")
+        logger.info(f"URL: {url}, BPM: {bpm}, Key: {key}, Moods: {moods}")
+        print(f"Processing influence music record ID: {record_id}")
+        
+        # Create a base parameters object to send to OpenAI
+        base_params = {
+            'api_used': 'sonic',
+            'title': f"Inspired by {url}",
+            'bpm': bpm,
+            'key': key,
+            'moods': moods,
+            'make_instrumental': False,
+            'mv': 'sonic-v4',
+            'voice_gender': 'female'
+        }
+        
+        # Use OpenAI to generate optimized parameters
+        logger.info("Using OpenAI to generate optimized parameters for influence music")
+        system_message = """
+        You are a music production assistant. You will be given musical analysis data 
+        from a reference track, including BPM, key, and moods. Your task is to create 
+        optimal parameters for generating a new song inspired by these characteristics.
+        
+        Return a JSON object with the following parameters for the Sonic API:
+        - title: A creative title for the song (keep "Inspired by [url]" format)
+        - style: Style tags for the song (incorporate BPM, key, and moods in a format Sonic API will understand)
+        - negative_tags: Tags to avoid in generation
+        - make_instrumental: Boolean indicating if the song should be instrumental (usually false)
+        - mv: Music video generation type (use 'sonic-v4')
+        - gpt_description_prompt: A brief description to guide generation (max 199 characters)
+        - voice_gender: Gender of the singer's voice (use 'female')
+        
+        Also include these fields for compatibility:
+        - api_used: Set to 'sonic'
+        - prompt: Brief lyrics that match the mood and style
+        
+        IMPORTANT: For the 'style' field, format it as a comma-separated string that effectively 
+        communicates the musical characteristics to the Sonic API. Don't just list BPM and key 
+        directly, but incorporate them into appropriate style descriptions.
+        """
+        
+        user_message = f"""
+        Reference track analysis:
+        {json.dumps(base_params, indent=2)}
+        
+        Additional details:
+        - BPM: {bpm}
+        - Key: {key}
+        - Moods: {', '.join(moods) if moods else 'Unknown'}
+        
+        Please generate optimal parameters for creating a song inspired by these characteristics.
+        """
+        
         try:
-            deleted = agent.cleanup_old_logs(days_to_keep=7)  # Keep logs for 7 days
-            logger.info(f"[{current_time}] Scheduled log cleanup complete - deleted {deleted} old logs")
+            # Call OpenAI API
+            response = agent.openai_client.chat.completions.create(
+                model=OPENAI_MODEL,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": user_message}
+                ]
+            )
+            
+            # Parse the response
+            optimized_params = json.loads(response.choices[0].message.content)
+            logger.info(f"OpenAI generated parameters: {json.dumps(optimized_params, indent=2)}")
+            
+            # Validate and fix the mv field if needed
+            valid_mv_values = ['sonic-v3-5', 'sonic-v4']
+            if 'mv' in optimized_params:
+                if optimized_params['mv'] not in valid_mv_values:
+                    original_mv = optimized_params['mv']
+                    optimized_params['mv'] = 'sonic-v4'
+                    logger.warning(f"Invalid mv value '{original_mv}' was changed to 'sonic-v4'")
+            else:
+                optimized_params['mv'] = 'sonic-v4'
+                logger.warning("Missing mv field was added with default value 'sonic-v4'")
+            
+            # Extract key parameters for song creation
+            title = optimized_params.get('title', f"Inspired by {url}")
+            style = optimized_params.get('style', '')
+            negative_tags = optimized_params.get('negative_tags')
+            make_instrumental = optimized_params.get('make_instrumental', False)
+            mv = optimized_params.get('mv', 'sonic-v4')
+            gpt_description = optimized_params.get('gpt_description_prompt', '')
+            voice_gender = optimized_params.get('voice_gender', 'female')
+            
+            # Use lyrics from OpenAI if provided, otherwise use default
+            lyrics = optimized_params.get('prompt')
+            if not lyrics:
+                lyrics = "La la la, singing with the melody\nFeel the rhythm, let the music flow through me\n"
+                lyrics += "Dancing to the beat, this is where I want to be\nLet your heart soar free, just follow me"
+            
         except Exception as e:
-            logger.error(f"[{current_time}] Error in scheduled log cleanup: {str(e)}")
-
-    # Schedule the task to run once per day
-    schedule.every(1).day.at("00:00").do(log_cleanup_task)
-    
-    # Set the interval (in seconds)
-    interval = 3600  # 1 hour
-    
-    try:
-        while True:
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"Running feedback processing cycle at {current_time}")
-            print(f"\nRunning feedback processing cycle at {current_time}")
+            logger.error(f"Error using OpenAI to generate parameters: {str(e)}")
+            logger.exception("Exception details:")
             
-            # Get only the first unprocessed feedback (limit to 1 per hour)
-            try:
-                # First, check if there are any unprocessed feedback records
-                check_response = supabase_client.client.table("feedback").select("count").is_("rating", "null").execute()
-                total_count = check_response.data[0]['count'] if check_response.data else 0
+            # Fallback to direct parameter extraction if OpenAI fails
+            logger.info("Falling back to direct parameter extraction")
+            
+            # Format style string with BPM, key, and moods
+            style_tags = []
+            if bpm:
+                style_tags.append(f"BPM {bpm}")
+            if key:
+                style_tags.append(f"Key {key}")
+            style_tags.extend(moods)  # Add all moods to style tags
+            style = ", ".join(style_tags)
+            
+            # Generate simple lyrics based on the mood
+            lyrics = "La la la, singing with the melody\n"
+            lyrics += "Feel the rhythm, let the music flow through me\n"
+            lyrics += "Dancing to the beat, this is where I want to be\n"
+            lyrics += "Let your heart soar free, just follow me"
+            
+            # Set default parameters
+            title = f"Generated from {url}"
+            negative_tags = None
+            make_instrumental = False
+            mv = 'sonic-v4'
+            gpt_description = None
+            voice_gender = 'female'
+            
+            # Create a basic optimized_params for storage
+            optimized_params = {
+                'api_used': 'sonic',
+                'title': title,
+                'style': style,
+                'negative_tags': negative_tags,
+                'make_instrumental': make_instrumental,
+                'mv': mv,
+                'gpt_description_prompt': gpt_description,
+                'voice_gender': voice_gender,
+                'prompt': lyrics,
+                'bpm': bpm,
+                'key': key,
+                'moods': moods
+            }
+        
+        # Create a new song using the optimized parameters
+        logger.info(f"Creating new song with optimized parameters: title={title}, style={style}")
+        
+        # Use create_song with the optimized parameters
+        result = music_api.create_song(
+            prompt=lyrics,
+            title=title,
+            style=style,
+            negative_tags=negative_tags,
+            make_instrumental=make_instrumental,
+            mv=mv,
+            gpt_description_prompt=gpt_description[:199] if gpt_description else None,
+            voice_gender=voice_gender
+        )
+        
+        if result.get('status') == 'failed':
+            logger.error(f"Failed to create song: {result.get('error')}")
+            return False
+            
+        logger.info(f"Song creation initiated: {result}")
+        
+        # Check song status until it's completed or failed
+        task_id = result.get('task_id')
+        if not task_id:
+            logger.error("Failed to get task ID for song creation")
+            return False
+        
+        # Poll for song status
+        logger.info(f"Checking status for task: {task_id}")
+        status = "pending"
+        attempt = 1
+        max_attempts = 60
+        check_interval = 30
+        song_data = None
+        
+        while status != "succeeded" and status != "failed" and attempt <= max_attempts:
+            logger.info(f"Checking song status (attempt {attempt}/{max_attempts})...")
+            
+            status_response = music_api.check_song_status(task_id)
+            
+            # Handle Sonic API response format
+            if status_response and 'data' in status_response and len(status_response['data']) > 0:
+                song_data = status_response['data'][0]
+                status = song_data.get('state', 'unknown')
                 
-                if total_count == 0:
-                    logger.info("No unprocessed feedback to process")
-                    print("No unprocessed feedback to process")
-                else:
-                    logger.info(f"Found {total_count} total unprocessed feedback records")
-                    print(f"Found {total_count} total unprocessed feedback records")
+                # If we have audio_url but status is still pending, we can proceed
+                if status == "pending" and song_data.get('audio_url') and song_data.get('audio_url').startswith('https://'):
+                    logger.info("Song has audio URL but status is still pending. Proceeding anyway.")
+                    status = "succeeded"
+            
+            if status not in ["succeeded", "failed"]:
+                logger.info(f"Song is still being processed (attempt {attempt}/{max_attempts})...")
+                attempt += 1
+                time.sleep(check_interval)  # Wait between checks
+        
+        if status == "succeeded" or (status == "pending" and song_data and song_data.get('audio_url')):
+            logger.info(f"Song status: {status}")
+            
+            # Extract data from the response
+            audio_url = song_data.get('audio_url', '')
+            video_url = song_data.get('video_url', '')
+            image_url = song_data.get('image_url', '')
+            duration = song_data.get('duration', 0)
+            
+            logger.info(f"Audio URL: {audio_url}")
+            
+            # Store the song data in Supabase
+            try:
+                # Store the original analysis in the optimized_params
+                optimized_params['original_analysis'] = analysis
+                
+                # Prepare song data for database
+                song_data_for_db = {
+                    'title': title,
+                    'lyrics': lyrics,
+                    'style': style,
+                    'audio_url': audio_url,
+                    'video_url': video_url,
+                    'image_url': image_url,
+                    'make_instrumental': make_instrumental,
+                    'mv': mv,
+                    'gpt_description': gpt_description[:199] if gpt_description else None,
+                    'negative_tags': negative_tags,
+                    'duration': duration,
+                    'persona_id': 'direct_generation',
+                    'params_used': optimized_params,
+                    'processor_did': agent.did_manager.did if hasattr(agent, 'did_manager') else None,
+                    'api_used': 'sonic'
+                }
+                
+                # Store song data in Supabase
+                db_song_id = supabase_client.store_song_data(song_data_for_db)
+                
+                if db_song_id:
+                    logger.info(f"Song data stored in Supabase: {db_song_id}")
+                    logger.info(f"Successfully created song from URL: {url} (ID: {db_song_id})")
                     
-                    # Get just the first one
-                    response = supabase_client.client.table("feedback").select("*").is_("rating", "null").limit(1).execute()
-                    
-                    if response.data and len(response.data) > 0:
-                        feedback = response.data[0]
-                        logger.info(f"Processing 1 feedback record (ID: {feedback.get('id')})")
-                        print(f"Processing feedback for song {feedback.get('song_id')}: {feedback.get('comments')}")
-                        
-                        # Add extra debug logging
-                        logger.info(f"Feedback details: {json.dumps(feedback, indent=2, default=str)}")
-                        
-                        # Process the feedback
-                        if process_feedback(feedback, agent, music_api, supabase_client):
-                            logger.info("Successfully processed feedback")
-                            print("Successfully processed feedback")
-                        else:
-                            logger.error("Failed to process feedback")
-                            print("Failed to process feedback")
+                    # Mark the influence music record as processed
+                    if supabase_client.mark_influence_music_processed(record_id, song_id=db_song_id):
+                        logger.info(f"Influence music record {record_id} marked as processed with song_id {db_song_id}")
+                        return True
                     else:
-                        logger.warning("Failed to retrieve the first unprocessed feedback record")
-                        print("Failed to retrieve the first unprocessed feedback record")
+                        logger.warning(f"Failed to mark influence music record {record_id} as processed")
+                        return False
+                else:
+                    logger.warning("Failed to store song data in Supabase")
+                    return False
+                    
             except Exception as e:
-                logger.error(f"Error retrieving or processing feedback: {str(e)}")
+                logger.error(f"Error storing song data: {str(e)}")
                 logger.exception("Exception details:")
-                print(f"Error retrieving or processing feedback: {str(e)}")
+                return False
             
-            logger.info(f"Next processing cycle will run in 1 hour")
-            print(f"Next processing cycle will run in 1 hour")
+        else:
+            logger.error(f"Song creation failed with status: {status}")
+            return False
             
-            # Run any pending scheduled tasks
-            schedule.run_pending()
-            
-            # Sleep for the specified interval
-            print(f"Sleeping for {interval} seconds (1 hour)...")
-            print("(Press Ctrl+C to stop)")
-            
-            # Sleep in smaller increments to allow for more responsive Ctrl+C handling
-            sleep_increment = 10  # seconds
-            for _ in range(interval // sleep_increment):
-                time.sleep(sleep_increment)
-                # Run any pending scheduled tasks
-                schedule.run_pending()
-                # Check for keyboard interrupt
-                if sys.stdin.isatty() and sys.stdin.readable() and sys.stdin.seekable():
-                    try:
-                        # Check if there's input available
-                        import select
-                        if select.select([sys.stdin], [], [], 0)[0]:
-                            # Read a character
-                            char = sys.stdin.read(1)
-                            if char == 'q':
-                                print("Quitting by user request...")
-                                return 0
-                    except:
-                        pass
-            
-            # Sleep any remaining time
-            time.sleep(interval % sleep_increment)
-            
-    except KeyboardInterrupt:
-        logger.info("Process interrupted by user")
-        print("\nProcess interrupted by user")
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Error processing influence music record: {str(e)}")
         logger.exception("Exception details:")
-        print(f"\nUnexpected error: {str(e)}")
+        return False
+
+def check_for_unprocessed_feedback(agent, music_api, supabase_client):
+    """
+    Check for unprocessed feedback and process it.
+    
+    Args:
+        agent: YonaAgent instance
+        music_api: MusicAPI instance
+        supabase_client: SupabaseClient instance
+    """
+    try:
+        # Get unprocessed feedback
+        unprocessed_feedback = supabase_client.get_unprocessed_feedback()
+        
+        if not unprocessed_feedback:
+            logger.info("No unprocessed feedback found")
+            return
+        
+        logger.info(f"Found {len(unprocessed_feedback)} unprocessed feedback records")
+        
+        # Process each feedback record
+        for feedback in unprocessed_feedback:
+            success = process_feedback(feedback, agent, music_api, supabase_client)
+            if success:
+                logger.info(f"Successfully processed feedback {feedback['id']}")
+            else:
+                logger.error(f"Failed to process feedback {feedback['id']}")
+    
+    except Exception as e:
+        logger.error(f"Error checking for unprocessed feedback: {str(e)}")
+        logger.exception("Exception details:")
+
+def check_for_unprocessed_influence_music(agent, music_api, supabase_client):
+    """
+    Check for unprocessed influence music and process it.
+    
+    Args:
+        agent: YonaAgent instance
+        music_api: MusicAPI instance
+        supabase_client: SupabaseClient instance
+    """
+    try:
+        # Get unprocessed influence music
+        unprocessed_records = supabase_client.get_unprocessed_influence_music()
+        
+        if not unprocessed_records:
+            logger.info("No unprocessed influence music found")
+            return
+        
+        logger.info(f"Found {len(unprocessed_records)} unprocessed influence music records")
+        
+        # Process each record
+        for record in unprocessed_records:
+            success = process_influence_music(record, agent, music_api, supabase_client)
+            if success:
+                logger.info(f"Successfully processed influence music {record['id']}")
+            else:
+                logger.error(f"Failed to process influence music {record['id']}")
+    
+    except Exception as e:
+        logger.error(f"Error checking for unprocessed influence music: {str(e)}")
+        logger.exception("Exception details:")
+
+def main():
+    """Run the continuous feedback processor."""
+    try:
+        # Load environment variables
+        load_dotenv()
+        
+        # Create agent, music API, and Supabase client
+        agent = YonaAgent()
+        music_api = MusicAPI()
+        supabase_client = SupabaseClient()
+        
+        # Check for unprocessed feedback immediately
+        logger.info("Checking for unprocessed feedback...")
+        check_for_unprocessed_feedback(agent, music_api, supabase_client)
+        
+        # Check for unprocessed influence music immediately
+        logger.info("Checking for unprocessed influence music...")
+        check_for_unprocessed_influence_music(agent, music_api, supabase_client)
+        
+        # Schedule checks every hour
+        schedule.every(1).hours.do(check_for_unprocessed_feedback, agent, music_api, supabase_client)
+        schedule.every(1).hours.do(check_for_unprocessed_influence_music, agent, music_api, supabase_client)
+        
+        logger.info("Continuous feedback processor started")
+        print("Continuous feedback processor started")
+        print("Press Ctrl+C to stop")
+        
+        # Run the scheduler
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    
+    except KeyboardInterrupt:
+        logger.info("Continuous feedback processor stopped by user")
+        print("Continuous feedback processor stopped")
+    
+    except Exception as e:
+        logger.error(f"Error running continuous feedback processor: {str(e)}")
+        logger.exception("Exception details:")
+        print(f"Error: {str(e)}")
         return 1
     
     return 0
