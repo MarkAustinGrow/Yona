@@ -157,6 +157,16 @@ Based on the code analysis, the Supabase database includes the following tables:
 | `params_used` | jsonb | Parameters used for this version |
 | `created_at` | timestamp | When the version was created |
 
+### Influence Music Table
+
+| Column Name | Type | Description |
+|------------|------|-------------|
+| `id` | uuid (primary key) | Unique ID for the influence music record |
+| `url` | text | URL to the reference music |
+| `analysis` | jsonb | Analysis data including BPM, key, and moods |
+| `song_id` | uuid | Reference to the song created from this influence (NULL indicates unprocessed) |
+| `created_at` | timestamp | When the record was created |
+
 ## 5. Feedback and Versioning System
 
 The codebase includes a comprehensive feedback and versioning system that allows for iterative improvement of songs:
@@ -168,15 +178,32 @@ The codebase includes a comprehensive feedback and versioning system that allows
    - **Manual Processing**: Using `create_song_from_feedback.py` to process a specific feedback record
    - **Automatic Processing**: Using `continuous_feedback_processor.py` to continuously monitor and process feedback
 
+### Influence Music Processing
+
+The system can also create songs inspired by existing music:
+
+1. **Influence Music Collection**: Reference music URLs and their analysis are stored in the `influence_music` table.
+2. **Analysis Data**: Each record contains analysis data including:
+   - BPM (Beats Per Minute)
+   - Musical key
+   - Moods with confidence scores
+3. **Processing Flow**:
+   - The `process_influence_music()` function processes unprocessed records
+   - OpenAI is used to generate optimized parameters based on the musical characteristics
+   - A new song is created using these parameters
+   - The song is stored in the database and linked to the influence music record
+   - The influence music record is marked as processed
+
 ### Continuous Feedback Processor
 
 The `continuous_feedback_processor.py` script:
-- Runs as a daemon process, checking for unprocessed feedback every hour
-- Processes one feedback record per cycle to manage API usage
-- Uses OpenAI to intelligently modify song parameters based on feedback
-- Creates new songs with the modified parameters
-- Stores the new songs in the database with references to the original song and feedback
-- Marks feedback as processed by setting a rating value (5)
+- Runs as a daemon process, checking for unprocessed feedback and influence music every hour
+- Processes one record per cycle to manage API usage
+- For feedback: Uses OpenAI to intelligently modify song parameters based on feedback
+- For influence music: Uses OpenAI to generate parameters based on musical characteristics
+- Creates new songs with the generated parameters
+- Stores the new songs in the database with appropriate references
+- Marks records as processed
 - Includes robust error handling and logging
 
 ### Song Versioning
@@ -283,6 +310,8 @@ class SupabaseClient:
     def update_feedback(self, feedback_id, data)
     def get_unprocessed_feedback()
     def store_song_version(self, original_song_id, version_data)
+    def get_unprocessed_influence_music(self, limit=1)
+    def mark_influence_music_processed(self, record_id, song_id)
 ```
 
 ## 7. Command-line Scripts
@@ -559,6 +588,20 @@ This ensures continuous operation even when one API is unavailable, making the s
    - The feedback is marked as processed
 5. The processor_did field allows tracking which agent processed each feedback
 
+### Influence Music Processing Workflow
+1. User runs the continuous_feedback_processor.py script
+2. YonaAgent is initialized with DID capabilities
+3. The system checks for unprocessed influence music records (where song_id is NULL)
+4. For each unprocessed record:
+   - The URL and analysis data (BPM, key, moods) are extracted
+   - OpenAI is used to generate optimized parameters based on the musical characteristics
+   - These parameters include style, negative tags, description, and even sample lyrics
+   - A new song is created using the Sonic API with these parameters
+   - The song status is monitored until completion
+   - The song data is stored in Supabase with a reference to the original analysis
+   - The influence music record is marked as processed by setting its song_id
+5. This workflow enables creating songs inspired by existing music while maintaining creative uniqueness
+
 ## 11. Recently Fixed Issues
 
 1. Database schema compatibility issue:
@@ -571,6 +614,13 @@ This ensures continuous operation even when one API is unavailable, making the s
    - Added check_interval parameter (default: 30 seconds)
    - Improved error handling and logging
    - Added logic to consider a song successful if it has an audio URL even if status is still "pending"
+
+3. Continuous feedback processor syntax error:
+   - Fixed an unterminated string literal in the `process_influence_music` function
+   - Completed the `song_data_for_db` dictionary definition
+   - Added missing code for storing song data and marking influence music as processed
+   - Added the `check_for_unprocessed_influence_music` function to the main loop
+   - This fix enables the system to process influence music records automatically
 
 ## 12. Backup Recommendation
 
