@@ -595,8 +595,13 @@ def process_influence_music(record, agent, music_api, supabase_client):
             lyrics += "Dancing to the beat, this is where I want to be\n"
             lyrics += "Let your heart soar free, just follow me"
             
-            # Set default parameters
-            title = f"Generated from {url}"
+            # Extract just the filename from the URL to keep title short
+            url_parts = url.split('/')
+            filename = url_parts[-1] if len(url_parts) > 0 else "music"
+            title = f"Generated from {filename}"
+            # Ensure title is less than 80 characters
+            if len(title) > 75:  # Leave some margin
+                title = title[:75] + "..."
             negative_tags = None
             make_instrumental = False
             mv = 'sonic-v4'
@@ -822,9 +827,9 @@ def main():
         logger.info("Checking for unprocessed influence music...")
         check_for_unprocessed_influence_music(agent, music_api, supabase_client)
         
-        # Schedule checks every hour
-        schedule.every(1).hours.do(check_for_unprocessed_feedback, agent, music_api, supabase_client)
-        schedule.every(1).hours.do(check_for_unprocessed_influence_music, agent, music_api, supabase_client)
+        # Schedule checks every 30 minutes
+        schedule.every(30).minutes.do(check_for_unprocessed_feedback, agent, music_api, supabase_client)
+        schedule.every(30).minutes.do(check_for_unprocessed_influence_music, agent, music_api, supabase_client)
         
         logger.info("Continuous feedback processor started")
         print("Continuous feedback processor started")
