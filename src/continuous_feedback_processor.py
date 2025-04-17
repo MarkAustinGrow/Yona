@@ -486,7 +486,7 @@ def process_influence_music(record, agent, music_api, supabase_client):
         # Create a base parameters object to send to OpenAI
         base_params = {
             'api_used': 'sonic',
-            'title': f"Inspired by {url}",
+            'title': "New Song",  # Generic title without URL
             'bpm': bpm,
             'key': key,
             'moods': moods,
@@ -503,7 +503,7 @@ def process_influence_music(record, agent, music_api, supabase_client):
         optimal parameters for generating a new song inspired by these characteristics.
         
         Return a JSON object with the following parameters for the Sonic API:
-        - title: A creative title for the song (keep "Inspired by [url]" format)
+        - title: A creative and unique title for the song summarising the lyrics in one or two words (DO NOT include any URLs in the title)
         - style: Style tags for the song (incorporate BPM, key, and moods in a format Sonic API will understand)
         - negative_tags: Tags to avoid in generation
         - make_instrumental: Boolean indicating if the song should be instrumental (usually false)
@@ -513,7 +513,15 @@ def process_influence_music(record, agent, music_api, supabase_client):
         
         Also include these fields for compatibility:
         - api_used: Set to 'sonic'
-        - prompt: Brief lyrics that match the mood and style
+        - prompt: UNIQUE AND CREATIVE LYRICS that match the mood and style
+        
+        CRITICAL REQUIREMENTS FOR LYRICS:
+        1. Create COMPLETELY UNIQUE lyrics for each song - do not use generic templates
+        2. Write at least 8-12 lines of lyrics (not just 2-3 lines)
+        3. Make the lyrics specific to the mood, key, and BPM of the reference track
+        4. Avoid generic phrases like "La la la" or "Feel the rhythm"
+        5. Include a verse and chorus structure when possible
+        6. The lyrics should tell a story or convey a specific emotion
         
         IMPORTANT: For the 'style' field, format it as a comma-separated string that effectively 
         communicates the musical characteristics to the Sonic API. Don't just list BPM and key 
@@ -559,7 +567,15 @@ def process_influence_music(record, agent, music_api, supabase_client):
                 logger.warning("Missing mv field was added with default value 'sonic-v4'")
             
             # Extract key parameters for song creation
-            title = optimized_params.get('title', f"Inspired by {url}")
+            # Use a generic title if OpenAI doesn't provide one or if the title contains a URL
+            title = optimized_params.get('title', '')
+            if not title or 'http' in title.lower():
+                # Generate a title based on the primary mood and current timestamp
+                from datetime import datetime
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                title = f"{primary_mood} Melody {timestamp}"
+                logger.warning(f"Using generic title '{title}' because OpenAI provided an invalid or missing title")
+            
             style = optimized_params.get('style', '')
             negative_tags = optimized_params.get('negative_tags')
             make_instrumental = optimized_params.get('make_instrumental', False)
@@ -574,55 +590,28 @@ def process_influence_music(record, agent, music_api, supabase_client):
                 lyrics += "Dancing to the beat, this is where I want to be\nLet your heart soar free, just follow me"
             
         except Exception as e:
-            logger.error(f"Error using OpenAI to generate parameters: {str(e)}")
+            error_msg = f"Error using OpenAI to generate parameters: {str(e)}"
+            logger.error(error_msg)
             logger.exception("Exception details:")
             
-            # Fallback to direct parameter extraction if OpenAI fails
-            logger.info("Falling back to direct parameter extraction")
-            
-            # Format style string with BPM, key, and moods
-            style_tags = []
-            if bpm:
-                style_tags.append(f"BPM {bpm}")
-            if key:
-                style_tags.append(f"Key {key}")
-            style_tags.extend(moods)  # Add all moods to style tags
-            style = ", ".join(style_tags)
-            
-            # Generate simple lyrics based on the mood
-            lyrics = "La la la, singing with the melody\n"
-            lyrics += "Feel the rhythm, let the music flow through me\n"
-            lyrics += "Dancing to the beat, this is where I want to be\n"
-            lyrics += "Let your heart soar free, just follow me"
-            
-            # Extract just the filename from the URL to keep title short
-            url_parts = url.split('/')
-            filename = url_parts[-1] if len(url_parts) > 0 else "music"
-            title = f"Generated from {filename}"
-            # Ensure title is less than 80 characters
-            if len(title) > 75:  # Leave some margin
-                title = title[:75] + "..."
-            negative_tags = None
-            make_instrumental = False
-            mv = 'sonic-v4'
-            gpt_description = None
-            voice_gender = 'female'
-            
-            # Create a basic optimized_params for storage
-            optimized_params = {
-                'api_used': 'sonic',
-                'title': title,
-                'style': style,
-                'negative_tags': negative_tags,
-                'make_instrumental': make_instrumental,
-                'mv': mv,
-                'gpt_description_prompt': gpt_description,
-                'voice_gender': voice_gender,
-                'prompt': lyrics,
-                'bpm': bpm,
-                'key': key,
-                'moods': moods
+            # Provide detailed error information
+            error_context = {
+                "operation": "OpenAI parameter generation",
+                "record_id": record_id,
+                "url": url,
+                "analysis_data": {
+                    "bpm": bpm,
+                    "key": key,
+                    "moods": moods
+                },
+                "error": str(e)
             }
+            
+            logger.error(f"Detailed error context: {json.dumps(error_context, indent=2, default=str)}")
+            
+            # Instead of silently falling back, raise an exception to be handled at a higher level
+            # This ensures the issue is visible and can be properly addressed
+            raise RuntimeError(f"Failed to generate parameters with OpenAI: {str(e)}. See logs for details.")
         
         # Create a new song using the optimized parameters
         logger.info(f"Creating new song with optimized parameters: title={title}, style={style}")

@@ -667,3 +667,41 @@ Detailed deployment instructions are available in the DEPLOYMENT_GUIDE.md file, 
 - **Health Check**: https://yona.club/health
 - **Capabilities Document**: https://yona.club/capabilities
 - **DID Document**: https://yona.club/.well-known/did.json
+
+## 14. Error Handling Best Practices
+
+### Avoid Silent Fallbacks
+
+The codebase should avoid silent fallbacks that mask real issues. Instead:
+
+1. **Detailed Error Reporting**: All errors should be logged with comprehensive details including:
+   - The specific operation that failed
+   - All relevant parameters and context
+   - The complete error message and stack trace
+   - Any system state information that might be relevant
+
+2. **Fail Fast and Explicitly**: When critical operations fail (like OpenAI API calls), the system should:
+   - Raise appropriate exceptions rather than falling back to default values
+   - Propagate errors to the appropriate level where they can be handled meaningfully
+   - Provide clear error messages that help identify the root cause
+
+3. **Monitoring Over Masking**: Instead of hiding errors with fallbacks:
+   - Implement robust monitoring to detect and alert on failures
+   - Create dashboards to track error rates and types
+   - Set up alerting for critical failures that require immediate attention
+
+4. **Graceful Degradation vs. Silent Fallbacks**: When alternative behavior is necessary:
+   - Clearly log that the primary approach failed and a secondary approach is being used
+   - Ensure the degraded functionality is obvious to users and operators
+   - Track these occurrences as incidents requiring investigation, not as normal operation
+
+This approach ensures that real problems are visible and fixable, rather than being masked by fallback mechanisms that create subtle, hard-to-diagnose issues.
+
+### Example: Influence Music Processing
+
+The `process_influence_music` function should be modified to remove silent fallbacks with default lyrics. Instead, it should:
+
+1. Log detailed errors when OpenAI fails to generate parameters
+2. Provide specific error messages that help diagnose the issue
+3. Either retry with different parameters or fail explicitly
+4. Never use generic default lyrics that mask the real problem
