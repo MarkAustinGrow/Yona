@@ -9,11 +9,13 @@ session_id = f"yona-agent-test-{int(time.time())}"
 print(f"Using session ID: {session_id}")
 
 # Connect to the Coral server
-base_url = "http://coral.pushcollective.club:3001"
+base_url = "https://coral.pushcollective.club"
 sse_url = f"{base_url}/default-app/public/{session_id}/sse"
 api_url = f"{base_url}/api"  # Try using a separate API endpoint for POST requests
+message_url = f"{base_url}/default-app/public/{session_id}"  # Direct message URL without /sse
 print(f"SSE URL: {sse_url}")
 print(f"API URL: {api_url}")
+print(f"Message URL: {message_url}")
 
 # Start listening for events in a separate thread
 def listen_for_events():
@@ -45,6 +47,7 @@ time.sleep(2)
 # Try different endpoints for registration
 def try_register_agent():
     endpoints = [
+        message_url,  # Direct message URL (most likely to work)
         f"{api_url}/register_agent",
         f"{api_url}/agents",
         f"{base_url}/register_agent",
