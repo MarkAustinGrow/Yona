@@ -20,3 +20,12 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+      
+  yona-coral:
+    build: .
+    env_file:
+      - .env
+    command: python run_yona_coral.py --continuous
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
