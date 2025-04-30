@@ -19,7 +19,7 @@ logger = logging.getLogger("simple_coral_test")
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Simple test for Coral Protocol integration")
-    parser.add_argument("--yona-agent-id", default="yona-agent-1745932063", help="Yona agent ID")
+    parser.add_argument("--yona-agent-id", default="yona-agent", help="Yona agent ID")
     parser.add_argument("--youtube-agent-id", default="youtube-agent", help="YouTube agent ID")
     parser.add_argument("--server-url", default="https://coral.pushcollective.club", help="Coral server URL")
     parser.add_argument("--wait-time", type=int, default=30, help="Time to wait after sending message (seconds)")

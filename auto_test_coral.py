@@ -35,61 +35,18 @@ def parse_args():
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
     return parser.parse_args()
 
-def get_current_agent_id(container_name, tail_lines=200, retry_count=3, retry_delay=5):
+def get_current_agent_id(container_name=None, tail_lines=None, retry_count=None, retry_delay=None):
     """
-    Extract the current Yona agent ID from Docker logs.
+    Get the fixed Yona agent ID.
     
-    Args:
-        container_name: Name of the Docker container
-        tail_lines: Number of log lines to check
-        retry_count: Number of times to retry if agent ID not found
-        retry_delay: Seconds to wait between retries
-        
+    Note: This function previously extracted the agent ID from Docker logs,
+    but now returns a fixed ID since we've updated the system to use a consistent agent ID.
+    
     Returns:
-        str: The current Yona agent ID, or None if not found
+        str: The fixed Yona agent ID
     """
-    logger.info(f"Extracting current agent ID from {container_name} logs")
-    
-    for attempt in range(retry_count):
-        try:
-            # Run docker logs command and capture output
-            logger.info(f"Running docker logs command (attempt {attempt+1}/{retry_count})")
-            result = subprocess.run(
-                ["docker", "logs", container_name, "--tail", str(tail_lines)],
-                capture_output=True, text=True, check=True
-            )
-            
-            # Parse the logs to find the agent ID
-            logger.info("Parsing logs to find agent ID")
-            
-            # Try different patterns to find the agent ID
-            patterns = [
-                r"Creating Coral adapter with session ID: (yona-agent-\d+)",
-                r"Initialized Coral client with session ID: (yona-agent-\d+)",
-                r"SSE URL: https://coral\.pushcollective\.club/devmode/default-app/public/(yona-agent-\d+)/sse"
-            ]
-            
-            for pattern in patterns:
-                matches = re.findall(pattern, result.stdout)
-                if matches:
-                    # Get the most recent match (likely the current agent ID)
-                    agent_id = matches[-1]
-                    logger.info(f"Found agent ID: {agent_id}")
-                    return agent_id
-            
-            logger.warning(f"Agent ID not found in logs (attempt {attempt+1}/{retry_count})")
-            
-            if attempt < retry_count - 1:
-                logger.info(f"Waiting {retry_delay} seconds before retrying...")
-                time.sleep(retry_delay)
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Error running docker logs command: {e}")
-            if attempt < retry_count - 1:
-                logger.info(f"Waiting {retry_delay} seconds before retrying...")
-                time.sleep(retry_delay)
-    
-    logger.error(f"Failed to find agent ID after {retry_count} attempts")
-    return None
+    logger.info("Using fixed agent ID: yona-agent")
+    return "yona-agent"
 
 def test_with_agent_id(agent_id, args):
     """

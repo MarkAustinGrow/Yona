@@ -66,7 +66,8 @@ class CoralClient:
             try:
                 # Use requests to establish SSE connection
                 headers = {"Accept": "text/event-stream"}
-                sse_url_with_agent = f"{self.sse_url}?agentId=yona-agent"
+                agent_id = self.session_id.split('-')[0] + "-agent"  # Extract the base name (e.g., "yona-agent" from "yona-agent-12345")
+                sse_url_with_agent = f"{self.sse_url}?agentId={agent_id}"
                 
                 self.logger.info(f"Connecting to SSE endpoint: {sse_url_with_agent}")
                 response = requests.get(sse_url_with_agent, headers=headers, stream=True)
@@ -353,7 +354,8 @@ class CoralClient:
         def _listen():
             self.logger.info(f"Starting event listener for session: {self.session_id}")
             headers = {"Accept": "text/event-stream"}
-            sse_url_with_agent = f"{self.sse_url}?agentId=yona-agent"
+            agent_id = self.session_id.split('-')[0] + "-agent"  # Extract the base name (e.g., "yona-agent" from "yona-agent-12345")
+            sse_url_with_agent = f"{self.sse_url}?agentId={agent_id}"
             
             while True:
                 try:

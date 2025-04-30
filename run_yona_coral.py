@@ -34,7 +34,7 @@ def main():
     parser.add_argument('--http', action='store_true', help='Use HTTP instead of HTTPS')
     parser.add_argument('--app', default='default-app', help='Application ID')
     parser.add_argument('--key', default='public', help='Privacy key')
-    parser.add_argument('--session', default=f'yona-agent-{int(time.time())}', help='Session ID')
+    parser.add_argument('--session', default=os.environ.get('YONA_SESSION_ID', 'yona-agent'), help='Session ID')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
     parser.add_argument('--timeout', type=int, default=30, help='Timeout for waiting for mentions (seconds)')
     parser.add_argument('--continuous', action='store_true', help='Run in continuous mode')

@@ -25,6 +25,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      - YONA_SESSION_ID=yona-agent
     command: python run_yona_coral.py --continuous
     restart: unless-stopped
     volumes:
