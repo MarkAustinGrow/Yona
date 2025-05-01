@@ -302,12 +302,35 @@ class YonaCoralAdapter:
         logger.info(f"Received message: {json.dumps(data, indent=2)}")
         
         try:
-            # Check if this message mentions Yona
+            # Extract message data first
+            thread_id = data.get('thread_id')
+            content = data.get('content', '')
+            sender_id = data.get('sender_id')
+            
+            # Check for mentions in various formats
+            mentioned = False
+
+            # Check if agent_id is in the mentions list
             if self.agent_id in data.get('mentions', []):
-                thread_id = data['thread_id']
-                content = data['content']
-                sender_id = data['sender_id']
-                
+                mentioned = True
+                logger.info(f"Found mention in mentions list: {self.agent_id}")
+
+            # Check for @agent_id pattern in content
+            elif self.agent_id and f"@{self.agent_id}" in content:
+                mentioned = True
+                logger.info(f"Found @mention in content: @{self.agent_id}")
+
+            # Check for <@agent_id> pattern in content (alternate format)
+            elif self.agent_id and f"<@{self.agent_id}>" in content:
+                mentioned = True
+                logger.info(f"Found <@mention> in content: <@{self.agent_id}>")
+
+            # Check for "yona" in content (case insensitive)
+            elif "yona" in content.lower():
+                mentioned = True
+                logger.info(f"Found name mention in content: yona")
+
+            if mentioned:
                 logger.info(f"Received message mention from {sender_id} in thread {thread_id}")
                 
                 try:
