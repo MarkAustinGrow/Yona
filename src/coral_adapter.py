@@ -9,10 +9,13 @@ import uuid
 import asyncio
 import logging
 import threading
+import json
+import time
 from typing import Dict, Any, Optional, List, Callable
 
 from src.agent import YonaAgent
 from coral_client import CoralClient
+from src.coral_did import CoralDID
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +46,14 @@ class YonaAgentWithCoral(YonaAgent):
         # Initialize Coral client
         self.coral = CoralClient(coral_server_url, agent_id)
         self.coral.add_message_handler(self.handle_coral_message)
+        
+        # Initialize CoralDID for secure identity verification
+        if hasattr(self, 'did_manager'):
+            self.coral_did = CoralDID(self.did_manager)
+            logger.info(f"CoralDID initialized with DID: {self.did_manager.did}")
+        else:
+            self.coral_did = None
+            logger.warning("No DID manager available, secure identity verification will be limited")
         
         # Track active threads
         self.active_threads = {}
@@ -113,6 +124,23 @@ class YonaAgentWithCoral(YonaAgent):
         
         logger.info(f"Handling mention from {sender_id} in thread {thread_id}: {content}")
         
+        # Verify sender identity if DID is available and message has signature
+        if self.coral_did and message.get("signature"):
+            # Extract signature and original message
+            signature = message.get("signature")
+            original_message = message.get("original_message", content)
+            
+            # Verify the signature
+            is_verified = self.coral_did.verify_agent_identity(sender_id, signature, original_message)
+            
+            if not is_verified:
+                logger.warning(f"Failed to verify identity of sender: {sender_id}")
+                # Optionally, you could choose not to respond to unverified senders
+                # return
+                
+                # For now, we'll continue but log a warning
+                logger.warning("Proceeding with unverified sender")
+        
         # Generate a response using OpenAI
         system_message = f"""
         You are Yona, an AI K-pop star and music creator. You're responding to a message in a 
@@ -140,8 +168,19 @@ class YonaAgentWithCoral(YonaAgent):
         # Extract the response text
         response_text = response.choices[0].message.content
         
+        # Sign the message if DID is available
+        signature_info = None
+        if self.coral_did:
+            signature_info = self.coral_did.sign_message(response_text)
+            logger.info("Signed response message with DID")
+        
         # Send the response back to the thread
-        await self.coral.send_message(thread_id, response_text, mentions=[sender_id])
+        await self.coral.send_message(
+            thread_id, 
+            response_text, 
+            mentions=[sender_id],
+            signature_info=signature_info
+        )
         logger.info(f"Sent response to {sender_id} in thread {thread_id}")
     
     async def _handle_thread_created(self, message: Dict[str, Any]):
@@ -165,7 +204,13 @@ class YonaAgentWithCoral(YonaAgent):
         # Send a greeting message to the thread
         greeting = "Hello everyone! I'm Yona, an AI K-pop star and music creator. I can help with creating songs, generating lyrics, and processing feedback on music. How can I assist you today?"
         
-        await self.coral.send_message(thread_id, greeting)
+        # Sign the greeting if DID is available
+        signature_info = None
+        if self.coral_did:
+            signature_info = self.coral_did.sign_message(greeting)
+            logger.info("Signed greeting message with DID")
+        
+        await self.coral.send_message(thread_id, greeting, signature_info=signature_info)
         logger.info(f"Sent greeting to thread {thread_id}")
     
     async def _handle_regular_message(self, message: Dict[str, Any]):
@@ -204,6 +249,30 @@ class YonaAgentWithCoral(YonaAgent):
         
         logger.info(f"Creating collaboration thread with: {collaborator_ids}")
         
+        # Add security information if DID is available
+        if self.coral_did:
+            # Sign the collaboration request for verification
+            collaboration_data = {
+                "participants": participants,
+                "metadata": metadata,
+                "timestamp": str(int(time.time()))
+            }
+            
+            # Convert to string for signing
+            data_str = json.dumps(collaboration_data)
+            
+            # Sign the data
+            signature_info = self.coral_did.sign_message(data_str)
+            
+            # Add signature to metadata
+            metadata["security"] = {
+                "did": self.coral_did.did_manager.did,
+                "signature": signature_info.get("signature"),
+                "timestamp": collaboration_data["timestamp"]
+            }
+            
+            logger.info("Added DID signature to collaboration request for security")
+        
         # Create the thread
         thread_id = await self.coral.create_thread(participants, metadata)
         
@@ -213,10 +282,17 @@ class YonaAgentWithCoral(YonaAgent):
             # Send an initial message
             initial_message = "I've created this thread for us to collaborate on music creation. Let me know how I can help!"
             
+            # Sign the initial message if DID is available
+            signature_info = None
+            if self.coral_did:
+                signature_info = self.coral_did.sign_message(initial_message)
+                logger.info("Signed initial collaboration message with DID")
+            
             await self.coral.send_message(
                 thread_id, 
                 initial_message, 
-                mentions=collaborator_ids
+                mentions=collaborator_ids,
+                signature_info=signature_info
             )
             
             logger.info(f"Sent initial message to thread {thread_id}")
