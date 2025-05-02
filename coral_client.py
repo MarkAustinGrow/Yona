@@ -4,7 +4,9 @@ import uuid
 import asyncio
 import logging
 import httpx
+import requests
 import sseclient
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,45 +23,65 @@ class CoralClient:
         self.transport_session_id = None
         self.connected = False
         self.pending_operations = []
+        self.sse_thread = None
+        self.event_queue = asyncio.Queue()
 
     async def connect(self):
         """Connect to the Coral server via SSE."""
         logger.info(f"Connecting to Coral server at {self.sse_url}")
-        try:
-            response = self.client.stream('GET', self.sse_url)
-            client = sseclient.SSEClient(response)
-            
-            # Process events in a separate task to avoid blocking
-            async def process_events():
+        
+        # Start SSE connection in a separate thread since it's blocking
+        def sse_worker():
+            try:
+                logger.info(f"Starting SSE connection to {self.sse_url}")
+                response = requests.get(self.sse_url, stream=True)
+                client = sseclient.SSEClient(response)
+                
                 for event in client.events():
                     if event.event == 'message':
                         try:
                             data = json.loads(event.data)
-                            logger.info(f"Received SSE event: {data.get('type', 'unknown')}")
-                            
-                            # Extract transport_session_id if present
-                            if 'transport_session_id' in data:
-                                self.transport_session_id = data['transport_session_id']
-                                logger.info(f"Received transport_session_id: {self.transport_session_id}")
-                                self.connected = True
-                                
-                                # Process any pending operations
-                                for operation in self.pending_operations:
-                                    await operation()
-                                self.pending_operations = []
-                                
-                            await self._handle_message(data)
+                            # Put the event in the queue for async processing
+                            asyncio.run_coroutine_threadsafe(
+                                self.event_queue.put(data), 
+                                asyncio.get_event_loop()
+                            )
                         except json.JSONDecodeError:
                             logger.error(f"Failed to decode SSE event data: {event.data}")
                         except Exception as e:
                             logger.error(f"Error processing SSE event: {str(e)}")
-            
-            # Start processing events
-            asyncio.create_task(process_events())
-            
-        except Exception as e:
-            logger.error(f"Error connecting to Coral server: {str(e)}")
-            raise
+            except Exception as e:
+                logger.error(f"Error in SSE connection: {str(e)}")
+        
+        # Start the SSE thread
+        self.sse_thread = threading.Thread(target=sse_worker, daemon=True)
+        self.sse_thread.start()
+        
+        # Process events from the queue in the async context
+        asyncio.create_task(self._process_events())
+    
+    async def _process_events(self):
+        """Process events from the queue."""
+        while True:
+            try:
+                data = await self.event_queue.get()
+                logger.info(f"Processing SSE event: {data.get('type', 'unknown')}")
+                
+                # Extract transport_session_id if present
+                if 'transport_session_id' in data:
+                    self.transport_session_id = data['transport_session_id']
+                    logger.info(f"Received transport_session_id: {self.transport_session_id}")
+                    self.connected = True
+                    
+                    # Process any pending operations
+                    for operation in self.pending_operations:
+                        await operation()
+                    self.pending_operations = []
+                
+                await self._handle_message(data)
+                self.event_queue.task_done()
+            except Exception as e:
+                logger.error(f"Error processing event from queue: {str(e)}")
 
     async def _handle_message(self, message):
         """Handle incoming messages from the Coral server."""
