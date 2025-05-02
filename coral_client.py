@@ -38,22 +38,106 @@ class CoralClient:
             try:
                 logger.info(f"Starting SSE connection to {self.sse_url}")
                 response = requests.get(self.sse_url, stream=True)
-                client = sseclient.SSEClient(response)
                 
-                for event in client.events():
-                    if not self.running:
-                        break
+                # Log the response headers
+                logger.info(f"Response headers: {dict(response.headers)}")
+                
+                # Log the raw content for the first few chunks
+                chunk_count = 0
+                raw_content = b""
+                for chunk in response.iter_content(chunk_size=1024, decode_unicode=False):
+                    raw_content += chunk
+                    chunk_count += 1
+                    if chunk_count <= 5:  # Log just the first 5 chunks
+                        logger.info(f"Response chunk {chunk_count}: {chunk}")
+                    if chunk_count >= 5:
+                        break  # Just get enough for debugging
+                
+                # Log the decoded content
+                try:
+                    decoded_content = raw_content.decode('utf-8')
+                    logger.info(f"Decoded content (first 1000 chars): {decoded_content[:1000]}")
+                except UnicodeDecodeError as e:
+                    logger.error(f"Failed to decode content: {e}")
+                    logger.info(f"Raw content (hex): {raw_content.hex()[:200]}")
+                
+                # Now try to parse with SSEClient
+                logger.info("Attempting to parse with SSEClient...")
+                try:
+                    # Get a fresh response for the SSEClient
+                    response = requests.get(self.sse_url, stream=True)
+                    client = sseclient.SSEClient(response)
+                    for event in client.events():
+                        if not self.running:
+                            break
+                            
+                        logger.info(f"Received event: {event.event}, data: {event.data[:100]}...")
                         
-                    if event.event == 'message':
-                        try:
-                            data = json.loads(event.data)
-                            # Put the event in the thread-safe queue
-                            self.event_queue.put(data)
-                            logger.info(f"Added event to queue: {data.get('type', 'unknown')}")
-                        except json.JSONDecodeError:
-                            logger.error(f"Failed to decode SSE event data: {event.data}")
-                        except Exception as e:
-                            logger.error(f"Error processing SSE event: {str(e)}")
+                        if event.event == 'message':
+                            try:
+                                data = json.loads(event.data)
+                                # Put the event in the thread-safe queue
+                                self.event_queue.put(data)
+                                logger.info(f"Added event to queue: {data.get('type', 'unknown')}")
+                            except json.JSONDecodeError:
+                                logger.error(f"Failed to decode SSE event data: {event.data}")
+                            except Exception as e:
+                                logger.error(f"Error processing SSE event: {str(e)}")
+                except Exception as e:
+                    logger.error(f"SSEClient parsing error: {e}")
+                    
+                    # Fall back to custom parsing
+                    logger.info("Falling back to custom SSE parsing...")
+                    response = requests.get(self.sse_url, stream=True)
+                    
+                    # Custom SSE parser
+                    buffer = ""
+                    event_data = ""
+                    event_type = "message"  # Default event type
+                    
+                    for line in response.iter_lines(decode_unicode=True):
+                        if not self.running:
+                            break
+                            
+                        logger.debug(f"Raw line: {line}")
+                        
+                        if not line:
+                            # Empty line means end of event
+                            if event_data:
+                                try:
+                                    data = json.loads(event_data)
+                                    logger.info(f"Parsed event: {event_type}, data: {data}")
+                                    self.event_queue.put(data)
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"Failed to decode event data: {event_data}, error: {e}")
+                                
+                                # Reset for next event
+                                event_data = ""
+                                event_type = "message"
+                            continue
+                        
+                        # Parse the line
+                        if line.startswith('data:'):
+                            event_data += line[5:].strip()
+                        elif line.startswith('event:'):
+                            event_type = line[6:].strip()
+                        elif line.startswith('id:'):
+                            # Handle event ID if needed
+                            pass
+                        elif line.startswith('retry:'):
+                            # Handle retry if needed
+                            pass
+                        # The Coral server might just be sending JSON directly
+                        elif line.startswith('{'):
+                            try:
+                                data = json.loads(line)
+                                logger.info(f"Parsed JSON event: {data}")
+                                self.event_queue.put(data)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Line starts with '{{' but is not valid JSON: {line}")
+                        else:
+                            logger.warning(f"Unknown SSE line format: {line}")
+                    
             except Exception as e:
                 logger.error(f"Error in SSE connection: {str(e)}")
         
