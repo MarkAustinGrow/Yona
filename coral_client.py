@@ -7,6 +7,8 @@ import httpx
 import requests
 import sseclient
 import threading
+import queue
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +26,8 @@ class CoralClient:
         self.connected = False
         self.pending_operations = []
         self.sse_thread = None
-        self.event_queue = asyncio.Queue()
+        self.event_queue = queue.Queue()  # Thread-safe queue
+        self.running = True
 
     async def connect(self):
         """Connect to the Coral server via SSE."""
@@ -38,14 +41,15 @@ class CoralClient:
                 client = sseclient.SSEClient(response)
                 
                 for event in client.events():
+                    if not self.running:
+                        break
+                        
                     if event.event == 'message':
                         try:
                             data = json.loads(event.data)
-                            # Put the event in the queue for async processing
-                            asyncio.run_coroutine_threadsafe(
-                                self.event_queue.put(data), 
-                                asyncio.get_event_loop()
-                            )
+                            # Put the event in the thread-safe queue
+                            self.event_queue.put(data)
+                            logger.info(f"Added event to queue: {data.get('type', 'unknown')}")
                         except json.JSONDecodeError:
                             logger.error(f"Failed to decode SSE event data: {event.data}")
                         except Exception as e:
@@ -61,10 +65,17 @@ class CoralClient:
         asyncio.create_task(self._process_events())
     
     async def _process_events(self):
-        """Process events from the queue."""
-        while True:
+        """Process events from the thread-safe queue."""
+        while self.running:
             try:
-                data = await self.event_queue.get()
+                # Use a non-blocking get with a timeout to allow for clean shutdown
+                try:
+                    data = self.event_queue.get(block=False)
+                except queue.Empty:
+                    # No events in queue, sleep a bit and try again
+                    await asyncio.sleep(0.1)
+                    continue
+                
                 logger.info(f"Processing SSE event: {data.get('type', 'unknown')}")
                 
                 # Extract transport_session_id if present
@@ -74,14 +85,17 @@ class CoralClient:
                     self.connected = True
                     
                     # Process any pending operations
-                    for operation in self.pending_operations:
-                        await operation()
+                    pending_ops = self.pending_operations.copy()
                     self.pending_operations = []
+                    for operation in pending_ops:
+                        await operation()
                 
                 await self._handle_message(data)
                 self.event_queue.task_done()
             except Exception as e:
                 logger.error(f"Error processing event from queue: {str(e)}")
+                # Sleep a bit to avoid tight loop in case of persistent errors
+                await asyncio.sleep(0.1)
 
     async def _handle_message(self, message):
         """Handle incoming messages from the Coral server."""
