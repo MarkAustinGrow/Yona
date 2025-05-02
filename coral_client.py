@@ -73,7 +73,32 @@ class CoralClient:
                             
                         logger.info(f"Received event: {event.event}, data: {event.data[:100]}...")
                         
-                        if event.event == 'message':
+                        # Special handling for the endpoint event which contains the session ID
+                        if event.event == 'endpoint':
+                            try:
+                                # The data contains the endpoint URL with the session ID
+                                endpoint_url = event.data.strip()
+                                logger.info(f"Received endpoint URL: {endpoint_url}")
+                                
+                                # Extract the session ID from the URL
+                                import re
+                                session_id_match = re.search(r'sessionId=([^&]+)', endpoint_url)
+                                if session_id_match:
+                                    session_id = session_id_match.group(1)
+                                    logger.info(f"Extracted session ID: {session_id}")
+                                    
+                                    # Create a transport session event and put it in the queue
+                                    transport_event = {
+                                        'transport_session_id': session_id,
+                                        'type': 'transport_session'
+                                    }
+                                    self.event_queue.put(transport_event)
+                                    logger.info(f"Added transport session event to queue: {transport_event}")
+                                else:
+                                    logger.error(f"Failed to extract session ID from endpoint URL: {endpoint_url}")
+                            except Exception as e:
+                                logger.error(f"Error processing endpoint event: {str(e)}")
+                        elif event.event == 'message':
                             try:
                                 data = json.loads(event.data)
                                 # Put the event in the thread-safe queue
@@ -83,6 +108,9 @@ class CoralClient:
                                 logger.error(f"Failed to decode SSE event data: {event.data}")
                             except Exception as e:
                                 logger.error(f"Error processing SSE event: {str(e)}")
+                        else:
+                            # Handle any other event types
+                            logger.info(f"Received unhandled event type: {event.event}")
                 except Exception as e:
                     logger.error(f"SSEClient parsing error: {e}")
                     
