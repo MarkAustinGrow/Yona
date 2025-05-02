@@ -112,7 +112,10 @@ class CoralClient:
         }
         
         response = await self.send_to_server("register_agent", payload)
-        if response and not response.get("error"):
+        if response is None:
+            logger.info(f"Registration operation queued for agent {self.agent_id}")
+            return True  # Assume success for queued operations
+        elif not response.get("error"):
             logger.info(f"Successfully registered agent {self.agent_id}")
             return True
         else:
@@ -128,7 +131,10 @@ class CoralClient:
         }
         
         response = await self.send_to_server("create_thread", payload)
-        if response and "thread_id" in response:
+        if response is None:
+            logger.info(f"Create thread operation queued")
+            return "pending_thread_id"  # Return a placeholder ID for queued operations
+        elif "thread_id" in response:
             thread_id = response.get("thread_id")
             logger.info(f"Created thread: {thread_id}")
             return thread_id
@@ -154,7 +160,10 @@ class CoralClient:
             message_payload["original_message"] = signature_info.get("message")
         
         response = await self.send_to_server("send_message", message_payload)
-        if response and not response.get("error"):
+        if response is None:
+            logger.info(f"Send message operation queued for thread {thread_id}")
+            return {"status": "queued"}  # Return a status for queued operations
+        elif not response.get("error"):
             logger.info(f"Successfully sent message to thread {thread_id}")
             return response
         else:
