@@ -14,6 +14,15 @@ The project is structured as follows:
   - Multiple Python modules for different functionalities
 - `lyrics/`: Directory containing lyrics files for song creation
 - `tests/`: Test files for the project
+- CrewAI integration files:
+  - `crew_config.py`: Configuration for CrewAI integration
+  - `yona_implementation.py`: Bridge between CrewAI and Yona
+  - `yona_tools.py`: CrewAI tools for Yona functionality
+  - `yona_crew_agent.py`: CrewAI Agent definition
+  - `yona_crew_tasks.py`: CrewAI Tasks definition
+  - `yona_crew.py`: CrewAI Crew setup
+  - `yona_crew_cli.py`: CLI for CrewAI integration
+  - `test_yona_crew.py`: Tests for CrewAI integration
 
 ## 2. Dependencies and Imports
 
@@ -26,6 +35,8 @@ The project is structured as follows:
   - `openai`: OpenAI API client
   - `flask`: Web framework for API endpoints
   - `cryptography`: Cryptographic operations for DID management
+  - `crewai`: Framework for orchestrating autonomous AI agents
+  - `crewai-tools`: Set of tools for the crewAI framework
 
 ### Import Structure by File
 
@@ -85,6 +96,14 @@ from src.agent import YonaAgent
 from src.music_api import MusicAPI
 from src.supabase_client import SupabaseClient
 from src.config.config import MUSICAPI_KEY, OPENAI_KEY
+```
+
+#### yona_tools.py (CrewAI Integration)
+```python
+import logging
+from typing import Dict, Any, List, Optional
+from crewai.tools import BaseTool
+from yona_implementation import YonaImplementationManager
 ```
 
 ## 3. Configuration (src/config/config.py)
@@ -314,6 +333,48 @@ class SupabaseClient:
     def mark_influence_music_processed(self, record_id, song_id)
 ```
 
+### YonaImplementationManager (yona_implementation.py)
+
+```python
+class YonaImplementationManager:
+    def __init__(self, did_domain="yona.ai", private_key_path=None)
+    def generate_song(self, prompt, api="sonic", **kwargs)
+    def process_feedback(self, song_id, feedback_id)
+    def list_songs(self, limit=10, offset=0)
+    def get_song(self, song_id)
+    def get_capability_document()
+    def get_did_document()
+    def process_user_request(self, user_input)
+    def _modify_parameters_with_openai(self, original_params, feedback_comments)
+```
+
+### CrewAI Tools (yona_tools.py)
+
+```python
+class GenerateSongTool(BaseTool):
+    def _run(self, prompt: str, api: str = "sonic", **kwargs)
+
+class ProcessFeedbackTool(BaseTool):
+    def _run(self, song_id: str, feedback_id: str)
+
+class ListSongsTool(BaseTool):
+    def _run(self, limit: int = 10, offset: int = 0)
+
+class GetSongTool(BaseTool):
+    def _run(self, song_id: str)
+
+class GetCapabilityDocumentTool(BaseTool):
+    def _run(self)
+
+class GetDIDDocumentTool(BaseTool):
+    def _run(self)
+
+class ProcessUserRequestTool(BaseTool):
+    def _run(self, user_input: str)
+
+def get_yona_tools() -> List[BaseTool]
+```
+
 ## 7. Command-line Scripts
 
 ### create_song.py
@@ -458,6 +519,64 @@ python src/continuous_feedback_processor.py
 run_feedback_processor.bat
 ```
 
+### yona_crew_cli.py
+
+Provides a command-line interface for executing Yona tasks through CrewAI.
+
+Parameters:
+- `--task`: Task to perform (choices: 'create_song', 'process_feedback', 'list_songs', 'process_request')
+- `--prompt`: Prompt for song creation
+- `--api`: API to use for song creation (choices: 'sonic', 'nuro', default: 'sonic')
+- `--style`: Style tags for the song
+- `--negative-tags`: Negative tags to avoid
+- `--make-instrumental`: Make the song instrumental (flag)
+- `--mv`: Music video generation type (default: 'sonic-v4')
+- `--description`: Description prompt
+- `--gender`: Singer gender for Nuro API (choices: 'Female', 'Male')
+- `--genre`: Genre for Nuro API
+- `--mood`: Mood for Nuro API
+- `--timbre`: Timbre for Nuro API
+- `--duration`: Duration in seconds for Nuro API
+- `--song-id`: ID of the song to process feedback for
+- `--feedback-id`: ID of the feedback to process
+- `--limit`: Maximum number of songs to list (default: 10)
+- `--offset`: Offset for pagination (default: 0)
+- `--request`: Natural language request to process
+- `--interactive`: Run in interactive mode (flag)
+- `--output`: Output format (choices: 'text', 'json', default: 'text')
+- `--use-crew`: Use CrewAI to execute tasks (flag)
+
+Example usage:
+```bash
+# Interactive mode
+python yona_crew_cli.py --interactive
+
+# Create a song
+python yona_crew_cli.py --task create_song --prompt "Create a happy K-pop song about summer adventures"
+
+# Process feedback
+python yona_crew_cli.py --task process_feedback --song-id "song_id" --feedback-id "feedback_id"
+
+# List songs
+python yona_crew_cli.py --task list_songs --limit 10 --offset 0
+
+# Process a natural language request
+python yona_crew_cli.py --task process_request --request "Create a song about friendship"
+
+# Use CrewAI to execute tasks
+python yona_crew_cli.py --task create_song --prompt "Create a happy K-pop song about summer adventures" --use-crew
+```
+
+### test_yona_crew.py
+
+Tests the CrewAI integration with Yona.
+
+Example usage:
+```bash
+# Test the CrewAI integration
+python test_yona_crew.py
+```
+
 ## 8. Integration Points
 
 1. **OpenAI API Integration**:
@@ -476,6 +595,12 @@ run_feedback_processor.bat
    - Provides decentralized identity and capability document generation
    - Enables secure, authenticated communication between agents
    - Implemented using the Model Context Protocol framework
+
+5. **CrewAI Integration**:
+   - Enables Yona to be used as an agent within the CrewAI framework
+   - Provides a bridge between Yona's functionality and CrewAI's agent system
+   - Exposes Yona's capabilities as CrewAI tools
+   - Allows for orchestrating Yona with other agents in a crew
 
 ## 9. API Options
 
@@ -602,6 +727,16 @@ This ensures continuous operation even when one API is unavailable, making the s
    - The influence music record is marked as processed by setting its song_id
 5. This workflow enables creating songs inspired by existing music while maintaining creative uniqueness
 
+### CrewAI Integration Workflow
+1. User runs the yona_crew_cli.py script
+2. YonaImplementationManager is initialized to bridge CrewAI and Yona
+3. CrewAI tools are created to expose Yona's functionality
+4. Based on the user's command:
+   - For direct execution: The appropriate YonaImplementationManager method is called
+   - For CrewAI execution: A CrewAI Crew is created with the Yona agent and tasks
+5. The task is executed, and the result is returned to the user
+6. In interactive mode, the process repeats for each user request
+
 ## 11. Recently Fixed Issues
 
 1. Database schema compatibility issue:
@@ -609,99 +744,9 @@ This ensures continuous operation even when one API is unavailable, making the s
    - Fixed by removing the `clip_id` field and adding `persona_id` with value 'direct_generation'
    - Changes made to both create_song.py and generate_song.py
 
-2. Song creation timeout issue:
-   - Increased max_attempts from 30 to 60
-   - Added check_interval parameter (default: 30 seconds)
-   - Improved error handling and logging
-   - Added logic to consider a song successful if it has an audio URL even if status is still "pending"
-
-3. Continuous feedback processor syntax error:
-   - Fixed an unterminated string literal in the `process_influence_music` function
-   - Completed the `song_data_for_db` dictionary definition
-   - Added missing code for storing song data and marking influence music as processed
-   - Added the `check_for_unprocessed_influence_music` function to the main loop
-   - This fix enables the system to process influence music records automatically
-
-## 12. Backup Recommendation
-
-To prevent code damage during major changes:
-1. Commit changes frequently with descriptive messages
-2. Create Git branches for major features
-3. Consider using Git tags to mark stable versions
-4. Implement automated tests for core functionality
-5. Document all environment variables and configurations
-
-## 13. Deployment
-
-The application is deployed using Docker containers on a Linode server:
-
-### Server Information
-- **IP Address**: 172-236-28-244
-- **Domain**: yona.club
-- **Operating System**: Ubuntu 22.04 LTS
-
-### Docker Setup
-The application is containerized using Docker and orchestrated with Docker Compose:
-- `Dockerfile`: Defines the application image based on Python
-- `docker-compose.yml`: Defines two services:
-  - **yona-api**: Runs the API server on port 5000
-  - **yona-feedback-processor**: Runs the continuous feedback processor
-
-### Deployment Architecture
-1. The Docker containers run on the Linode server
-2. Nginx serves as a reverse proxy, routing requests from yona.club to the API container
-3. SSL/TLS is provided by Let's Encrypt for secure HTTPS connections
-4. Environment variables are stored in a .env file on the server (not included in the repository)
-5. Logs are stored in the logs/ directory, which is mounted as a volume in the containers
-
-### Deployment Process
-Detailed deployment instructions are available in the DEPLOYMENT_GUIDE.md file, which covers:
-- Setting up the Linode server
-- Installing Docker and Docker Compose
-- Configuring Nginx as a reverse proxy
-- Setting up SSL with Let's Encrypt
-- Monitoring and maintenance procedures
-
-### Accessing the Deployed Application
-- **API Endpoints**: https://yona.club/
-- **Health Check**: https://yona.club/health
-- **Capabilities Document**: https://yona.club/capabilities
-- **DID Document**: https://yona.club/.well-known/did.json
-
-## 14. Error Handling Best Practices
-
-### Avoid Silent Fallbacks
-
-The codebase should avoid silent fallbacks that mask real issues. Instead:
-
-1. **Detailed Error Reporting**: All errors should be logged with comprehensive details including:
-   - The specific operation that failed
-   - All relevant parameters and context
-   - The complete error message and stack trace
-   - Any system state information that might be relevant
-
-2. **Fail Fast and Explicitly**: When critical operations fail (like OpenAI API calls), the system should:
-   - Raise appropriate exceptions rather than falling back to default values
-   - Propagate errors to the appropriate level where they can be handled meaningfully
-   - Provide clear error messages that help identify the root cause
-
-3. **Monitoring Over Masking**: Instead of hiding errors with fallbacks:
-   - Implement robust monitoring to detect and alert on failures
-   - Create dashboards to track error rates and types
-   - Set up alerting for critical failures that require immediate attention
-
-4. **Graceful Degradation vs. Silent Fallbacks**: When alternative behavior is necessary:
-   - Clearly log that the primary approach failed and a secondary approach is being used
-   - Ensure the degraded functionality is obvious to users and operators
-   - Track these occurrences as incidents requiring investigation, not as normal operation
-
-This approach ensures that real problems are visible and fixable, rather than being masked by fallback mechanisms that create subtle, hard-to-diagnose issues.
-
-### Example: Influence Music Processing
-
-The `process_influence_music` function should be modified to remove silent fallbacks with default lyrics. Instead, it should:
-
-1. Log detailed errors when OpenAI fails to generate parameters
-2. Provide specific error messages that help diagnose the issue
-3. Either retry with different parameters or fail explicitly
-4. Never use generic default lyrics that mask the real problem
+2. CrewAI integration compatibility issue:
+   - The CrewAI API had changed, requiring updates to the tool implementation
+   - Fixed by updating the import from `from crewai import Tool` to `from crewai.tools import BaseTool`
+   - Modified all tool classes to inherit from `BaseTool` instead of `Tool`
+   - Updated the return type annotation in the `get_yona_tools()` function to use `BaseTool` instead of `Tool`
+   - These changes align with the current CrewAI API, which requires custom tools to inherit from `BaseTool` in the `crewai.tools` module
