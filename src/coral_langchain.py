@@ -10,7 +10,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional, Union
 
-from langchain_coral import CoralRunnable, CoralRunnableConfig
+from src.coral_protocol.langchain import CoralRunnable, CoralRunnableConfig
 from langchain.schema.runnable import Runnable
 from langchain_openai import ChatOpenAI
 

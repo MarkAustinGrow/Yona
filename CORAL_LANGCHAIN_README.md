@@ -13,8 +13,8 @@ The integration consists of:
 
 ## Requirements
 
-- Python 3.10 or higher
-- langchain-coral package
+- Python 3.11 or higher (required by the Dockerfile)
+- LangChain and LangChain OpenAI packages
 - A running Coral Protocol server
 
 ## Installation
@@ -114,11 +114,13 @@ The following functions are exposed through the Coral Protocol:
 
 The integration uses the following components:
 
-1. `YonaCoralAdapter` - The main adapter class that connects Yona to a Coral server
-2. `CoralRunnable` - A LangChain component that exposes functions through the Coral Protocol
-3. `CoralRunnableConfig` - Configuration for the CoralRunnable
+1. `src/coral_langchain.py` - Contains the `YonaCoralAdapter` class that connects Yona to a Coral server
+2. `src/coral_protocol/langchain/runnable.py` - Contains the `CoralRunnable` class that exposes functions through the Coral Protocol
+3. `src/coral_protocol/langchain/config.py` - Contains the `CoralRunnableConfig` class for configuring the CoralRunnable
 
 The adapter uses the DID manager and capability document generator from the existing Yona MCP implementation to create a Coral Protocol identity and capability document.
+
+This implementation is based on the Coral Protocol LangChain integration from the [Coral Protocol GitHub repository](https://github.com/Coral-Protocol/coral-server/tree/v1/examples/langchain), but has been adapted to work with Yona and implemented locally rather than using an external package.
 
 ## Future Improvements
 
