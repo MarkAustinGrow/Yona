@@ -7,6 +7,11 @@ The project is structured as follows:
 - `src/`: Main source code directory
   - `api/`: API endpoints for MCP implementation
   - `config/`: Configuration files
+  - `coral_protocol/`: Coral Protocol LangChain integration
+    - `langchain/`: LangChain implementation for Coral Protocol
+      - `__init__.py`: Package initialization
+      - `config.py`: Configuration for Coral Protocol LangChain
+      - `runnable.py`: Main implementation of CoralRunnable
   - `examples/`: Example scripts
   - `identity/`: DID management for MCP implementation
   - `migrations/`: Database migration scripts
@@ -333,6 +338,42 @@ class SupabaseClient:
     def mark_influence_music_processed(self, record_id, song_id)
 ```
 
+### YonaCoralAdapter (src/coral_langchain.py)
+
+```python
+class YonaCoralAdapter:
+    def __init__(self, yona_agent, coral_server_url, openai_api_key=None, did_domain="yona.ai", private_key_path=None)
+    def _get_private_key_bytes()
+    def _create_coral_runnable()
+    def register_with_coral_server()
+    def call_agent(self, agent_did, function_name, **kwargs)
+    def discover_agents()
+    def get_agent_capabilities(self, agent_did)
+    def start_server(self, host='0.0.0.0', port=5001)
+```
+
+### CoralRunnable (src/coral_protocol/langchain/runnable.py)
+
+```python
+class CoralRunnable:
+    def __init__(self, functions, config)
+    def _register_with_server()
+    def _sign_payload(self, payload)
+    def call_agent(self, agent_did, function_name, **kwargs)
+    def discover_agents()
+    def get_agent_capabilities(self, agent_did)
+    def start_server(self, host='0.0.0.0', port=5001)
+    def _run_server(self, host, port)
+    def stop_server()
+```
+
+### CoralRunnableConfig (src/coral_protocol/langchain/config.py)
+
+```python
+class CoralRunnableConfig:
+    def __init__(self, server_url, did, private_key, capability_document, agent_name=None, agent_description=None)
+```
+
 ### YonaImplementationManager (yona_implementation.py)
 
 ```python
@@ -567,6 +608,34 @@ python yona_crew_cli.py --task process_request --request "Create a song about fr
 python yona_crew_cli.py --task create_song --prompt "Create a happy K-pop song about summer adventures" --use-crew
 ```
 
+### test_coral_langchain.py
+
+Tests the Coral Protocol LangChain integration with Yona.
+
+Parameters:
+- `--server-url`: URL of the Coral server (required)
+- `--test`: Test to run (choices: 'connection', 'capabilities', 'call', 'server', default: 'connection')
+- `--agent-did`: DID of the agent to interact with (required for 'capabilities' and 'call' tests)
+- `--function`: Function to call on the agent (required for 'call' test)
+- `--args`: JSON string of arguments to pass to the function (optional for 'call' test)
+- `--host`: Host to bind server to (default: '0.0.0.0', used for 'server' test)
+- `--port`: Port to bind server to (default: 5001, used for 'server' test)
+
+Example usage:
+```bash
+# Test connection to a Coral server
+python test_coral_langchain.py --server-url http://coral.pushcollective.club/sse --test connection
+
+# Test getting agent capabilities
+python test_coral_langchain.py --server-url http://coral.pushcollective.club/sse --test capabilities --agent-did did:web:example.com
+
+# Test calling an agent function
+python test_coral_langchain.py --server-url http://coral.pushcollective.club/sse --test call --agent-did did:web:example.com --function create_song --args '{"prompt": "Create a happy K-pop song about summer adventures"}'
+
+# Start a Coral server
+python test_coral_langchain.py --server-url http://coral.pushcollective.club/sse --test server --host 0.0.0.0 --port 5001
+```
+
 ### test_yona_crew.py
 
 Tests the CrewAI integration with Yona.
@@ -596,7 +665,15 @@ python test_yona_crew.py
    - Enables secure, authenticated communication between agents
    - Implemented using the Model Context Protocol framework
 
-5. **CrewAI Integration**:
+5. **Coral Protocol LangChain Integration**:
+   - Enables Yona to connect to a Coral Protocol server using LangChain
+   - Allows Yona to register its capabilities with the Coral server
+   - Enables discovering other agents on the Coral server
+   - Provides functionality for calling functions on other agents
+   - Implemented locally in the `src/coral_protocol/langchain` directory
+   - Exposes Yona's song creation, feedback processing, and song listing capabilities to other agents
+
+6. **CrewAI Integration**:
    - Enables Yona to be used as an agent within the CrewAI framework
    - Provides a bridge between Yona's functionality and CrewAI's agent system
    - Exposes Yona's capabilities as CrewAI tools
@@ -727,6 +804,27 @@ This ensures continuous operation even when one API is unavailable, making the s
    - The influence music record is marked as processed by setting its song_id
 5. This workflow enables creating songs inspired by existing music while maintaining creative uniqueness
 
+### Coral Protocol LangChain Integration Workflow
+1. User runs the test_coral_langchain.py script
+2. YonaAgent is initialized with DID capabilities
+3. YonaCoralAdapter is initialized with the YonaAgent and Coral server URL
+4. The adapter creates a CoralRunnable with Yona's functions (create_song, process_feedback, list_songs)
+5. The adapter registers with the Coral server, sharing Yona's capabilities
+6. The adapter can:
+   - Discover other agents on the Coral server
+   - Get the capabilities of other agents
+   - Call functions on other agents
+   - Start a server to listen for requests from other agents
+7. When another agent calls a function on Yona:
+   - The request is received by Yona's server
+   - The function is executed with the provided arguments
+   - The result is returned to the calling agent
+8. When Yona calls a function on another agent:
+   - The request is sent to the Coral server
+   - The Coral server routes the request to the target agent
+   - The target agent executes the function and returns the result
+   - The result is returned to Yona
+
 ### CrewAI Integration Workflow
 1. User runs the yona_crew_cli.py script
 2. YonaImplementationManager is initialized to bridge CrewAI and Yona
@@ -750,3 +848,11 @@ This ensures continuous operation even when one API is unavailable, making the s
    - Modified all tool classes to inherit from `BaseTool` instead of `Tool`
    - Updated the return type annotation in the `get_yona_tools()` function to use `BaseTool` instead of `Tool`
    - These changes align with the current CrewAI API, which requires custom tools to inherit from `BaseTool` in the `crewai.tools` module
+
+3. Coral Protocol LangChain integration issue:
+   - The `langchain-coral` package was not available on PyPI and was causing Docker build failures
+   - Fixed by implementing a local version of the Coral Protocol LangChain integration in the `src/coral_protocol/langchain` directory
+   - Updated the Dockerfile to use Python 3.11 instead of Python 3.10 for better compatibility
+   - Updated the import in `src/coral_langchain.py` to use the local implementation instead of the external package
+   - Created a script to fix the requirements.txt file on the server to remove the problematic dependency
+   - These changes allow Yona to connect to a Coral Protocol server without relying on an external package
