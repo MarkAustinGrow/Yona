@@ -10,4 +10,3 @@ crewai>=0.28.0
 crewai-tools>=0.1.6
 langchain>=0.1.0
 langchain-openai>=0.0.5
-# langchain-coral>=0.0.1 requires Python 3.11+
