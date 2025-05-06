@@ -54,6 +54,8 @@ logs/
 docs/
 *.md
 !README.md
+!CREWAI_README.md
+!crewAI_integration.md
 
 # Temporary files
 .DS_Store

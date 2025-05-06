@@ -6,3 +6,7 @@ pytest>=7.3.1
 flask>=2.0.0
 cryptography>=40.0.0
 schedule>=1.1.0
+crewai>=0.28.0
+crewai-tools>=0.1.6
+langchain>=0.1.0
+langchain-openai>=0.0.5
