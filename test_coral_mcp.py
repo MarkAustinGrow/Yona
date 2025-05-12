@@ -57,47 +57,82 @@ async def test_coral_connection(server_url, agent_id="yona", wait_for_agents=2):
             tools = client.get_tools()
             print(f"Available tools: {tools}")
             
+            # Find tools by name
+            list_agents_tool = None
+            create_thread_tool = None
+            send_message_tool = None
+            wait_for_mentions_tool = None
+            
+            for tool in tools:
+                if tool.name == "list_agents":
+                    list_agents_tool = tool
+                elif tool.name == "create_thread":
+                    create_thread_tool = tool
+                elif tool.name == "send_message":
+                    send_message_tool = tool
+                elif tool.name == "wait_for_mentions":
+                    wait_for_mentions_tool = tool
+            
             # List all registered agents
             print("\nListing agents on Coral server...")
-            list_agents_result = await client.invoke_tool("list_agents", {})
-            print(f"Registered agents: {list_agents_result}")
-            
-            # Look for Angus agent
-            angus_agent = None
-            for agent in list_agents_result.get("agents", []):
-                if "angus" in agent.get("id", "").lower():
-                    angus_agent = agent
-                    break
-            
-            if angus_agent:
-                print(f"\nFound Angus agent: {angus_agent}")
+            if list_agents_tool:
+                list_agents_result = await list_agents_tool.ainvoke({"includeDetails": True})
+                print(f"Registered agents: {list_agents_result}")
                 
-                # Create a thread with Angus
-                print("\nCreating a thread with Angus...")
-                thread_result = await client.invoke_tool("create_thread", {
-                    "participants": [agent_id, angus_agent.get("id")],
-                    "metadata": {"purpose": "testing communication"}
-                })
-                thread_id = thread_result.get("thread_id")
-                print(f"Created thread with ID: {thread_id}")
+                # Look for Angus agent
+                angus_agent = None
+                agents_list = list_agents_result.get("agents", [])
+                if isinstance(agents_list, list):
+                    for agent in agents_list:
+                        if isinstance(agent, dict) and "angus" in agent.get("id", "").lower():
+                            angus_agent = agent
+                            break
                 
-                # Send a message to Angus
-                print("\nSending a message to Angus...")
-                message_result = await client.invoke_tool("send_message", {
-                    "thread_id": thread_id,
-                    "content": "Hello from Yona! Can you tell me about your capabilities?",
-                    "mentions": [angus_agent.get("id")]
-                })
-                print(f"Message sent: {message_result}")
-                
-                # Wait for a response
-                print("\nWaiting for a response from Angus...")
-                mentions_result = await client.invoke_tool("wait_for_mentions", {
-                    "timeout": 30  # seconds
-                })
-                print(f"Received mentions: {mentions_result}")
+                if angus_agent:
+                    print(f"\nFound Angus agent: {angus_agent}")
+                    
+                    # Create a thread with Angus
+                    if create_thread_tool:
+                        print("\nCreating a thread with Angus...")
+                        thread_result = await create_thread_tool.ainvoke({
+                            "threadName": "Yona-Angus Test Thread",
+                            "participantIds": [agent_id, angus_agent.get("id")]
+                        })
+                        print(f"Thread creation result: {thread_result}")
+                        
+                        thread_id = thread_result.get("thread_id")
+                        if thread_id:
+                            print(f"Created thread with ID: {thread_id}")
+                            
+                            # Send a message to Angus
+                            if send_message_tool:
+                                print("\nSending a message to Angus...")
+                                message_result = await send_message_tool.ainvoke({
+                                    "threadId": thread_id,
+                                    "content": "Hello from Yona! Can you tell me about your capabilities?",
+                                    "mentions": [angus_agent.get("id")]
+                                })
+                                print(f"Message sent: {message_result}")
+                                
+                                # Wait for a response
+                                if wait_for_mentions_tool:
+                                    print("\nWaiting for a response from Angus...")
+                                    mentions_result = await wait_for_mentions_tool.ainvoke({
+                                        "timeoutMs": 30000  # 30 seconds
+                                    })
+                                    print(f"Received mentions: {mentions_result}")
+                                else:
+                                    print("Wait for mentions tool not found")
+                            else:
+                                print("Send message tool not found")
+                        else:
+                            print("Failed to get thread ID from result")
+                    else:
+                        print("Create thread tool not found")
+                else:
+                    print("Angus agent not found")
             else:
-                print("Angus agent not found")
+                print("List agents tool not found")
         
         return True
     except ImportError as e:
