@@ -14,6 +14,8 @@ We've successfully implemented and tested the Coral Protocol integration using t
 
 4. **Response Handling**: We've updated the script to handle different response formats, including string responses.
 
+5. **Agent ID**: We've updated the script to look for the specific Angus agent ID (`67899ddd-44cc-56b4-82b3-73642e091871`) instead of looking for "angus" in the ID.
+
 ## Testing Communication with Angus
 
 ### Prerequisites
@@ -43,7 +45,7 @@ chmod +x test_coral_angus.sh
 This script will:
 1. Connect to the Coral server
 2. List all registered agents
-3. Look for an agent with "angus" in its ID
+3. Look for the Angus agent with ID `67899ddd-44cc-56b4-82b3-73642e091871`
 4. If found, create a thread with Angus
 5. Send a message to Angus
 6. Wait for a response
