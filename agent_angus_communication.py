@@ -46,8 +46,19 @@ async def connect_to_angus(server_url, agent_id="yona", wait_for_agents=2):
         
         print(f"\n=== Connecting to Coral Protocol Server at {mcp_server_url} ===\n")
         
-        # Create the OpenAI model
-        model = ChatOpenAI(temperature=0)
+        # Create the OpenAI model with API key from environment
+        import os
+        from dotenv import load_dotenv
+        
+        # Load environment variables from .env file
+        load_dotenv()
+        
+        # Get the OpenAI API key
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+            
+        model = ChatOpenAI(temperature=0, api_key=openai_api_key)
         
         # Create the agent prompt
         prompt = ChatPromptTemplate.from_messages([

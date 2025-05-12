@@ -61,16 +61,25 @@ fi
 # Create a requirements file for the agent approach
 echo "Creating requirements file for the agent approach..."
 cat > agent_requirements.txt << EOF
-langchain==0.1.0
+langchain-core>=0.3.36,<0.4.0
 langchain_mcp_adapters==0.0.10
 langchain-openai>=0.0.2
 aiohttp>=3.8.5
+python-dotenv>=0.21.0
 EOF
 
-# Copy the script and requirements to the container
+# Copy the script, requirements, and .env file to the container
 echo "Copying files to the container..."
 docker cp agent_angus_communication.py "$CONTAINER_ID:/app/"
 docker cp agent_requirements.txt "$CONTAINER_ID:/app/"
+
+# Copy the .env file if it exists
+if [ -f .env ]; then
+  echo "Copying .env file to the container..."
+  docker cp .env "$CONTAINER_ID:/app/"
+else
+  echo "Warning: .env file not found. Make sure the OPENAI_API_KEY is set in the container."
+fi
 
 # Install the required packages
 echo "Installing required packages..."

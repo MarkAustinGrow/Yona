@@ -23,7 +23,9 @@ Based on feedback from Team Angus, we've implemented a new approach for communic
    http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse
    ```
 
-4. **Agent Approach**: Instead of directly invoking tools, we're creating an agent with the tools and letting the agent invoke them.
+4. **OpenAI API Key**: The script requires an OpenAI API key to create the agent. The key should be in the `.env` file in the Docker container. The script will automatically load it using `python-dotenv`.
+
+5. **Agent Approach**: Instead of directly invoking tools, we're creating an agent with the tools and letting the agent invoke them.
 
 ## How It Works
 
@@ -78,11 +80,17 @@ For successful communication, both Yona and Angus need to be connected to the Co
 1. **No Agents Found**: If the script reports "No agents are currently registered in the system", it means Angus is not connected to the server. Coordinate with Team Angus to ensure they're connected at the same time.
 
 2. **Package Version Issues**: If you encounter errors related to package versions, make sure you're using the correct versions:
-   - langchain==0.1.0
+   - langchain-core>=0.3.36,<0.4.0
    - langchain_mcp_adapters==0.0.10
    - langchain-openai>=0.0.2
+   - python-dotenv>=0.21.0
 
-3. **Connection Issues**: If you can't connect to the server, check that the server URL is correct and that you have internet access.
+3. **OpenAI API Key Issues**: If you see an error like "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable", make sure the `.env` file in the Docker container contains the OpenAI API key. You can copy the `.env` file to the container with:
+   ```bash
+   docker cp .env <container-id>:/app/
+   ```
+
+4. **Connection Issues**: If you can't connect to the server, check that the server URL is correct and that you have internet access.
 
 ## Next Steps
 
