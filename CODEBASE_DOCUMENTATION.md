@@ -835,7 +835,57 @@ This ensures continuous operation even when one API is unavailable, making the s
 5. The task is executed, and the result is returned to the user
 6. In interactive mode, the process repeats for each user request
 
-## 11. Recently Fixed Issues
+## 11. Agent-Based Communication with Angus
+
+The codebase includes an agent-based approach for communicating with Agent Angus via the Coral Protocol server. This approach uses LangChain's agent framework to create an agent that can interact with the Coral Protocol tools.
+
+### Key Components
+
+1. **agent_angus_communication.py**: Main script that connects to the Coral server and creates an agent
+2. **run_agent_angus_communication.sh** / **run_agent_angus_communication.bat**: Shell/batch scripts to run the main script in the Docker container
+3. **AGENT_BASED_COMMUNICATION_GUIDE.md**: Comprehensive documentation for the agent-based approach
+
+### How It Works
+
+1. The script connects to the Coral Protocol server using the specified URL and agent ID.
+2. It retrieves the available tools from the server.
+3. It creates a LangChain agent with those tools.
+4. The agent is given instructions to:
+   - List all registered agents
+   - Look for an agent with "angus" in its ID or description
+   - Create a thread with that agent
+   - Send a message introducing itself
+   - Wait for a response
+
+### Running the Agent-Based Communication
+
+```bash
+# Make the script executable
+chmod +x run_agent_angus_communication.sh
+
+# Run the script with default parameters
+./run_agent_angus_communication.sh
+
+# Or with custom parameters
+./run_agent_angus_communication.sh --container-id <container-id> --agent-id <agent-id> --wait-for-agents <number>
+```
+
+### Command Line Options
+
+- `--container-id`: Docker container ID (default: 59ff25c1a6a5)
+- `--agent-id`: ID to use for this agent (default: yona)
+- `--wait-for-agents`: Number of agents to wait for (default: 2)
+- `--server-url`: Coral server URL (default: http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse)
+
+### Technical Details
+
+The agent-based approach uses:
+- LangChain's agent framework to create an agent with the Coral Protocol tools
+- The agent is given instructions to find and communicate with Agent Angus
+- The agent uses the available tools to list agents, create threads, and send messages
+- The agent can handle errors and provide meaningful feedback
+
+## 12. Recently Fixed Issues
 
 1. Database schema compatibility issue:
    - The code was attempting to store a `clip_id` field that didn't exist in the Supabase schema
@@ -856,3 +906,15 @@ This ensures continuous operation even when one API is unavailable, making the s
    - Updated the import in `src/coral_langchain.py` to use the local implementation instead of the external package
    - Created a script to fix the requirements.txt file on the server to remove the problematic dependency
    - These changes allow Yona to connect to a Coral Protocol server without relying on an external package
+
+4. Coral Protocol tool invocation method issue:
+   - The test scripts were using `client.connections["coral"].invoke_tool()` which was causing an error: "Error invoking tool: 'dict' object has no attribute 'invoke_tool'"
+   - Fixed by changing to `tool.ainvoke()` which is the correct method for invoking tools with LangChain MCP adapters
+   - Updated the test scripts to use the correct method for invoking tools
+   - This fix ensures that the test scripts can successfully communicate with the Coral server
+
+5. OpenAI API key environment variable issue:
+   - The agent-based approach was looking for `OPENAI_API_KEY` but the environment variable was set as `OPENAI_KEY`
+   - Fixed by updating the script to check for both `OPENAI_KEY` and `OPENAI_API_KEY` environment variables
+   - Added better error messaging that mentions both variable names
+   - This fix ensures that the agent-based approach can use the OpenAI API key from the environment
