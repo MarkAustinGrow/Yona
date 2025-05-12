@@ -23,7 +23,7 @@ Based on feedback from Team Angus, we've implemented a new approach for communic
    http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse
    ```
 
-4. **OpenAI API Key**: The script requires an OpenAI API key to create the agent. The key should be in the `.env` file in the Docker container. The script will automatically load it using `python-dotenv`.
+4. **OpenAI API Key**: The script requires an OpenAI API key to create the agent. The key should be in the `.env` file in the Docker container with the variable name `OPENAI_KEY` or `OPENAI_API_KEY`. The script will automatically load it using `python-dotenv`.
 
 5. **Agent Approach**: Instead of directly invoking tools, we're creating an agent with the tools and letting the agent invoke them.
 
@@ -85,7 +85,7 @@ For successful communication, both Yona and Angus need to be connected to the Co
    - langchain-openai>=0.0.2
    - python-dotenv>=0.21.0
 
-3. **OpenAI API Key Issues**: If you see an error like "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable", make sure the `.env` file in the Docker container contains the OpenAI API key. You can copy the `.env` file to the container with:
+3. **OpenAI API Key Issues**: If you see an error like "Neither OPENAI_KEY nor OPENAI_API_KEY environment variables are set", make sure the `.env` file in the Docker container contains the OpenAI API key with the variable name `OPENAI_KEY` or `OPENAI_API_KEY`. You can copy the `.env` file to the container with:
    ```bash
    docker cp .env <container-id>:/app/
    ```
