@@ -81,12 +81,17 @@ async def test_coral_connection(server_url, agent_id="yona", wait_for_agents=2):
                 
                 # Look for Angus agent
                 angus_agent = None
-                agents_list = list_agents_result.get("agents", [])
-                if isinstance(agents_list, list):
-                    for agent in agents_list:
-                        if isinstance(agent, dict) and "angus" in agent.get("id", "").lower():
-                            angus_agent = agent
-                            break
+                
+                # Handle different response formats
+                if isinstance(list_agents_result, dict) and "agents" in list_agents_result:
+                    agents_list = list_agents_result.get("agents", [])
+                    if isinstance(agents_list, list):
+                        for agent in agents_list:
+                            if isinstance(agent, dict) and "angus" in agent.get("id", "").lower():
+                                angus_agent = agent
+                                break
+                else:
+                    print("No agents found or unexpected response format")
                 
                 if angus_agent:
                     print(f"\nFound Angus agent: {angus_agent}")
