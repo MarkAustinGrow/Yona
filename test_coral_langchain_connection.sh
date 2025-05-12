@@ -1,11 +1,12 @@
 #!/bin/bash
-# Script to test communication with Agent Angus via Coral Protocol
+# Script to test connection to the Coral server using LangChain MCP adapters
 
 # Set default values
 CONTAINER_ID="59ff25c1a6a5"  # Default container ID for yona_yona-api_1
 AGENT_ID="yona"
 WAIT_FOR_AGENTS=2
-SERVER_URL="http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse"
+HOSTNAME="coral.pushcollective.club"
+PORT=5555
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -22,8 +23,12 @@ while [[ $# -gt 0 ]]; do
       WAIT_FOR_AGENTS="$2"
       shift 2
       ;;
-    --server-url)
-      SERVER_URL="$2"
+    --hostname)
+      HOSTNAME="$2"
+      shift 2
+      ;;
+    --port)
+      PORT="$2"
       shift 2
       ;;
     --help)
@@ -32,7 +37,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --container-id ID      Docker container ID (default: 59ff25c1a6a5)"
       echo "  --agent-id ID          Agent ID to use (default: yona)"
       echo "  --wait-for-agents N    Number of agents to wait for (default: 2)"
-      echo "  --server-url URL       Coral server URL (default: http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse)"
+      echo "  --hostname HOST        Hostname of the Coral server (default: coral.pushcollective.club)"
+      echo "  --port PORT            Port of the Coral server (default: 5555)"
       echo "  --help                 Show this help message"
       exit 0
       ;;
@@ -44,11 +50,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-echo "=== Testing Communication with Agent Angus via Coral Protocol ==="
+echo "=== Testing Connection to Coral Server using LangChain MCP Adapters ==="
 echo "Container ID: $CONTAINER_ID"
 echo "Agent ID: $AGENT_ID"
 echo "Wait for agents: $WAIT_FOR_AGENTS"
-echo "Server URL: $SERVER_URL"
+echo "Hostname: $HOSTNAME"
+echo "Port: $PORT"
 echo
 
 # Check if the container exists
@@ -60,7 +67,7 @@ fi
 
 # Copy the test script and requirements to the container
 echo "Copying files to the container..."
-docker cp test_coral_mcp.py "$CONTAINER_ID:/app/"
+docker cp test_coral_langchain_connection.py "$CONTAINER_ID:/app/"
 docker cp coral_requirements.txt "$CONTAINER_ID:/app/"
 
 # Install the required packages
@@ -69,7 +76,7 @@ docker exec -it "$CONTAINER_ID" pip install -r /app/coral_requirements.txt
 
 # Run the test script
 echo "Running the test script..."
-docker exec -it "$CONTAINER_ID" python /app/test_coral_mcp.py --agent-id "$AGENT_ID" --wait-for-agents "$WAIT_FOR_AGENTS" --server-url "$SERVER_URL"
+docker exec -it "$CONTAINER_ID" python /app/test_coral_langchain_connection.py --agent-id "$AGENT_ID" --wait-for-agents "$WAIT_FOR_AGENTS" --hostname "$HOSTNAME" --port "$PORT"
 
 echo
 echo "Test completed"

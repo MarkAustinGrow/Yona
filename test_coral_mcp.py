@@ -57,26 +57,10 @@ async def test_coral_connection(server_url, agent_id="yona", wait_for_agents=2):
             tools = client.get_tools()
             print(f"Available tools: {tools}")
             
-            # Find tools by name
-            list_agents_tool = None
-            create_thread_tool = None
-            send_message_tool = None
-            wait_for_mentions_tool = None
-            
-            for tool in tools:
-                if tool.name == "list_agents":
-                    list_agents_tool = tool
-                elif tool.name == "create_thread":
-                    create_thread_tool = tool
-                elif tool.name == "send_message":
-                    send_message_tool = tool
-                elif tool.name == "wait_for_mentions":
-                    wait_for_mentions_tool = tool
-            
             # List all registered agents
             print("\nListing agents on Coral server...")
-            if list_agents_tool:
-                list_agents_result = await list_agents_tool.ainvoke({"includeDetails": True})
+            try:
+                list_agents_result = await client.connections["coral"].invoke_tool("list_agents", {"includeDetails": True})
                 print(f"Registered agents: {list_agents_result}")
                 
                 # Look for Angus agent
@@ -97,47 +81,38 @@ async def test_coral_connection(server_url, agent_id="yona", wait_for_agents=2):
                     print(f"\nFound Angus agent: {angus_agent}")
                     
                     # Create a thread with Angus
-                    if create_thread_tool:
-                        print("\nCreating a thread with Angus...")
-                        thread_result = await create_thread_tool.ainvoke({
-                            "threadName": "Yona-Angus Test Thread",
-                            "participantIds": [agent_id, angus_agent.get("id")]
-                        })
-                        print(f"Thread creation result: {thread_result}")
+                    print("\nCreating a thread with Angus...")
+                    thread_result = await client.connections["coral"].invoke_tool("create_thread", {
+                        "name": "Yona-Angus Test Thread",
+                        "participants": [agent_id, angus_agent.get("id")]
+                    })
+                    print(f"Thread creation result: {thread_result}")
+                    
+                    thread_id = thread_result.get("threadId")
+                    if thread_id:
+                        print(f"Created thread with ID: {thread_id}")
                         
-                        thread_id = thread_result.get("thread_id")
-                        if thread_id:
-                            print(f"Created thread with ID: {thread_id}")
-                            
-                            # Send a message to Angus
-                            if send_message_tool:
-                                print("\nSending a message to Angus...")
-                                message_result = await send_message_tool.ainvoke({
-                                    "threadId": thread_id,
-                                    "content": "Hello from Yona! Can you tell me about your capabilities?",
-                                    "mentions": [angus_agent.get("id")]
-                                })
-                                print(f"Message sent: {message_result}")
-                                
-                                # Wait for a response
-                                if wait_for_mentions_tool:
-                                    print("\nWaiting for a response from Angus...")
-                                    mentions_result = await wait_for_mentions_tool.ainvoke({
-                                        "timeoutMs": 30000  # 30 seconds
-                                    })
-                                    print(f"Received mentions: {mentions_result}")
-                                else:
-                                    print("Wait for mentions tool not found")
-                            else:
-                                print("Send message tool not found")
-                        else:
-                            print("Failed to get thread ID from result")
+                        # Send a message to Angus
+                        print("\nSending a message to Angus...")
+                        message_result = await client.connections["coral"].invoke_tool("send_message", {
+                            "threadId": thread_id,
+                            "content": "Hello from Yona! Can you tell me about your capabilities?",
+                            "mentions": [angus_agent.get("id")]
+                        })
+                        print(f"Message sent: {message_result}")
+                        
+                        # Wait for a response
+                        print("\nWaiting for a response from Angus...")
+                        mentions_result = await client.connections["coral"].invoke_tool("wait_for_mentions", {
+                            "timeoutMs": 30000  # 30 seconds
+                        })
+                        print(f"Received mentions: {mentions_result}")
                     else:
-                        print("Create thread tool not found")
+                        print("Failed to get thread ID from result")
                 else:
                     print("Angus agent not found")
-            else:
-                print("List agents tool not found")
+            except Exception as e:
+                print(f"Error invoking tool: {str(e)}")
         
         return True
     except ImportError as e:
@@ -157,7 +132,7 @@ def main():
     
     # Add arguments
     parser.add_argument('--server-url', type=str, 
-                        default="http://coral.pushcollective.club:3001/devmode/default-app/default-key/session1/sse",
+                        default="http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse",
                         help='Base URL of the Coral server (without query parameters)')
     parser.add_argument('--agent-id', type=str, default="yona",
                         help='ID to use for this agent')

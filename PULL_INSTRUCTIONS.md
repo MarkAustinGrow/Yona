@@ -99,17 +99,22 @@ Or run it with specific options:
 
 ## Latest Updates (May 12, 2025)
 
-We've fixed an issue with the test script:
+We've made several important updates to the test script:
 
-1. **Fixed the MCP adapter tool invocation method**:
-   - The script now uses `tool.ainvoke()` instead of `client.invoke_tool()`
-   - This is compatible with langchain_mcp_adapters version 0.0.11
+1. **Updated the Coral server connection URL**:
+   - Changed from `http://coral.pushcollective.club:3001/devmode/default-app/default-key/session1/sse`
+   - To `http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse`
+   - This matches the new Coral server configuration
 
-2. **Updated coral_requirements.txt**:
+2. **Updated the MCP adapter tool invocation method**:
+   - Changed from `tool.ainvoke()` to `client.connections["coral"].invoke_tool()`
+   - This follows the recommended approach for LangChain MCP adapters
+
+3. **Updated coral_requirements.txt**:
    - Changed `langchain_mcp_adapters>=0.1.0` to `langchain_mcp_adapters==0.0.11`
    - This ensures compatibility with the available version
 
-3. **Updated agent discovery**:
+4. **Updated agent discovery**:
    - The script now looks for the specific Angus agent ID (`69943c74-0cb8-5911-98db-79cca0bf8b7d`)
    - This makes agent discovery more reliable
 

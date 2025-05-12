@@ -10,11 +10,17 @@ We've successfully implemented and tested the Coral Protocol integration using t
 
 2. **No Agents Registered**: When we tested, no agents were registered on the Coral server, which means Angus was not connected at that time.
 
-3. **Tool Invocation**: We've fixed the script to use the correct method for invoking tools (`tool.ainvoke()` instead of `client.invoke_tool()`).
+3. **Tool Invocation**: We've updated the script to use the correct method for invoking tools (`client.connections["coral"].invoke_tool()` instead of `tool.ainvoke()`).
 
 4. **Response Handling**: We've updated the script to handle different response formats, including string responses.
 
 5. **Agent ID**: We've updated the script to look for the specific Angus agent ID (`69943c74-0cb8-5911-98db-79cca0bf8b7d`) instead of looking for "angus" in the ID.
+
+6. **Server Configuration**: We've updated the connection URL to use the new Coral server configuration:
+   - New URL: `http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse`
+   - New port: 5555 (changed from 3001)
+   - New application ID: exampleApplication (changed from default-app)
+   - New privacy key: privkey (changed from default-key)
 
 ## Testing Communication with Angus
 
@@ -57,7 +63,7 @@ If the test fails with "No agents are currently registered in the system", it me
 1. Verify that Angus is running
 2. Check that Angus is using the correct URL format:
    ```
-   http://coral.pushcollective.club:3001/devmode/default-app/default-key/session1/sse?agentId=<angus-id>&waitForAgents=2
+   http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse?agentId=<angus-id>&waitForAgents=2
    ```
 3. Make sure both Yona and Angus are using the same session ID (session1)
 
@@ -69,7 +75,7 @@ To establish successful communication, coordinate with the Angus team on:
 
 2. **URL Format**: Both agents should use the same base URL with the required query parameters:
    ```
-   http://coral.pushcollective.club:3001/devmode/default-app/default-key/session1/sse?agentId=<agent-id>&waitForAgents=2
+   http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse?agentId=<agent-id>&waitForAgents=2
    ```
 
 3. **Testing Schedule**: Arrange a time when both Yona and Angus will be running and connected to the Coral server.
@@ -89,7 +95,7 @@ To establish successful communication, coordinate with the Angus team on:
 ### URL Format
 
 ```
-http://coral.pushcollective.club:3001/devmode/default-app/default-key/session1/sse?agentId=<agent-id>&waitForAgents=2&agentDescription=<description>
+http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse?agentId=<agent-id>&waitForAgents=2&agentDescription=<description>
 ```
 
 ### Available Tools
