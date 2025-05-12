@@ -54,9 +54,12 @@ async def connect_to_angus(server_url, agent_id="yona", wait_for_agents=2):
         load_dotenv()
         
         # Get the OpenAI API key
-        openai_api_key = os.getenv("OPENAI_API_KEY")
+        openai_api_key = os.getenv("OPENAI_KEY")
         if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set")
+            # Try alternative environment variable name
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError("Neither OPENAI_KEY nor OPENAI_API_KEY environment variables are set")
             
         model = ChatOpenAI(temperature=0, api_key=openai_api_key)
         
