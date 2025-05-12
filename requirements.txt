@@ -10,4 +10,4 @@ crewai>=0.28.0
 crewai-tools>=0.1.6
 langchain>=0.1.0
 langchain-openai>=0.0.5
-langchain-coral>=0.0.1
+# langchain-coral is not available on PyPI, will need to be installed manually if needed
