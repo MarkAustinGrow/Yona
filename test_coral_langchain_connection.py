@@ -63,7 +63,17 @@ async def test_coral_connection(hostname="coral.pushcollective.club", port=5555,
             # List all registered agents
             print("\nListing agents on Coral server...")
             try:
-                list_agents_result = await client.connections["coral"].invoke_tool("list_agents", {"includeDetails": True})
+                # Get the list_agents tool
+                list_agents_tool = None
+                for tool in tools:
+                    if tool.name == "list_agents":
+                        list_agents_tool = tool
+                        break
+                
+                if list_agents_tool:
+                    list_agents_result = await list_agents_tool.ainvoke({"includeDetails": True})
+                else:
+                    raise ValueError("list_agents tool not found")
                 print(f"Registered agents: {list_agents_result}")
                 
                 # Look for other agents
@@ -81,10 +91,20 @@ async def test_coral_connection(hostname="coral.pushcollective.club", port=5555,
                             if agent_id not in participant_ids:
                                 participant_ids.append(agent_id)
                                 
-                            thread_result = await client.connections["coral"].invoke_tool("create_thread", {
-                                "name": "Yona Test Thread",
-                                "participants": participant_ids
-                            })
+                            # Get the create_thread tool
+                            create_thread_tool = None
+                            for tool in tools:
+                                if tool.name == "create_thread":
+                                    create_thread_tool = tool
+                                    break
+                            
+                            if create_thread_tool:
+                                thread_result = await create_thread_tool.ainvoke({
+                                    "threadName": "Yona Test Thread",
+                                    "participantIds": participant_ids
+                                })
+                            else:
+                                raise ValueError("create_thread tool not found")
                             print(f"Thread creation result: {thread_result}")
                             
                             thread_id = thread_result.get("threadId")
@@ -93,22 +113,40 @@ async def test_coral_connection(hostname="coral.pushcollective.club", port=5555,
                                 
                                 # Send a message to the thread
                                 print("\nSending a message to the thread...")
-                                message_result = await client.connections["coral"].invoke_tool("send_message", {
-                                    "threadId": thread_id,
-                                    "content": "Hello from Yona! This is a test message.",
-                                    "mentions": participant_ids
-                                })
-                                print(f"Message sent: {message_result}")
+                                send_message_tool = None
+                                for tool in tools:
+                                    if tool.name == "send_message":
+                                        send_message_tool = tool
+                                        break
                                 
-                                # Wait for a response
-                                print("\nWaiting for a response (30 seconds timeout)...")
-                                try:
-                                    mentions_result = await client.connections["coral"].invoke_tool("wait_for_mentions", {
-                                        "timeoutMs": 30000  # 30 seconds
+                                if send_message_tool:
+                                    message_result = await send_message_tool.ainvoke({
+                                        "threadId": thread_id,
+                                        "content": "Hello from Yona! This is a test message.",
+                                        "mentions": participant_ids
                                     })
-                                    print(f"Received mentions: {mentions_result}")
-                                except Exception as e:
-                                    print(f"No response received within timeout: {str(e)}")
+                                    print(f"Message sent: {message_result}")
+                                    
+                                    # Wait for a response
+                                    print("\nWaiting for a response (30 seconds timeout)...")
+                                    wait_for_mentions_tool = None
+                                    for tool in tools:
+                                        if tool.name == "wait_for_mentions":
+                                            wait_for_mentions_tool = tool
+                                            break
+                                    
+                                    if wait_for_mentions_tool:
+                                        try:
+                                            mentions_result = await wait_for_mentions_tool.ainvoke({
+                                                "timeoutMs": 30000  # 30 seconds
+                                            })
+                                            print(f"Received mentions: {mentions_result}")
+                                        except Exception as e:
+                                            print(f"No response received within timeout: {str(e)}")
+                                    else:
+                                        print("wait_for_mentions tool not found")
+                                else:
+                                    print("send_message tool not found")
                             else:
                                 print("Failed to get thread ID from result")
                         else:
