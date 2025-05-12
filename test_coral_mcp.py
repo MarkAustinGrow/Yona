@@ -87,7 +87,7 @@ async def test_coral_connection(server_url, agent_id="yona", wait_for_agents=2):
                     agents_list = list_agents_result.get("agents", [])
                     if isinstance(agents_list, list):
                         for agent in agents_list:
-                            if isinstance(agent, dict) and "angus" in agent.get("id", "").lower():
+                            if isinstance(agent, dict) and agent.get("id") == "67899ddd-44cc-56b4-82b3-73642e091871":
                                 angus_agent = agent
                                 break
                 else:
