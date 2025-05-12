@@ -110,7 +110,7 @@ We've fixed an issue with the test script:
    - This ensures compatibility with the available version
 
 3. **Updated agent discovery**:
-   - The script now looks for the specific Angus agent ID (`67899ddd-44cc-56b4-82b3-73642e091871`)
+   - The script now looks for the specific Angus agent ID (`69943c74-0cb8-5911-98db-79cca0bf8b7d`)
    - This makes agent discovery more reliable
 
 To apply these fixes:
