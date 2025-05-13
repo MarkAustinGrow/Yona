@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""
+YonaCoralAgent - Agent for communicating with Team Angus via Coral Protocol
+
+This module implements the YonaCoralAgent class, which connects to the Coral Protocol
+server and listens for function calls from Team Angus. It uses the YonaAgent class
+to create songs based on prompts received from Team Angus.
+
+Enhanced version with improved handling of string mentions and thread management.
+"""
+import os
+import sys
+import json
+import logging
+import uuid
+import asyncio
+from datetime import datetime
+import urllib.parse
+from typing import Dict, Any, Optional, List, Union
+
+# Import the langchain_mcp_adapters client
+try:
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+except ImportError:
+    print("Error: langchain_mcp_adapters package not installed.")
+    print("Please install it with: pip install langchain_mcp_adapters==0.0.10")
+    sys.exit(1)
+
+# Import the dotenv package for loading environment variables
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    print("Error: python-dotenv package not installed.")
+    print("Please install it with: pip install python-dotenv")
+    sys.exit(1)
+
+# Import the YonaAgent class
+try:
+    from src.agent import YonaAgent
+except ImportError:
+    print("Error: YonaAgent class not found.")
+    print("Make sure you're running this script from the project root directory.")
+    sys.exit(1)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class YonaCoralAgent:
+    """
+    YonaCoralAgent connects to the Coral Protocol server and listens for function calls
+    from Team Angus. It uses the YonaAgent class to create songs based on prompts
+    received from Team Angus.
+    """
+    
+    def __init__(self, server_url=None, agent_id=None, openai_api_key=None):
+        """
+        Initialize the YonaCoralAgent.
+        
+        Args:
+            server_url: URL of the Coral server (default: http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse)
+            agent_id: ID to use for this agent (default: yona_agent)
+            openai_api_key: API key for OpenAI (default: loaded from environment)
+        """
+        # Load environment variables from .env file
+        load_dotenv()
+        
+        # Set default values
+        self.server_url = server_url or "http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse"
+        self.agent_id = agent_id or "yona_agent"
+        
+        # Get the OpenAI API key
+        self.openai_api_key = openai_api_key or os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY")
+        if not self.openai_api_key:
+            logger.error("Neither OPENAI_KEY nor OPENAI_API_KEY environment variables are set")
+            raise ValueError("Neither OPENAI_KEY nor OPENAI_API_KEY environment variables are set")
+        
+        # Initialize the YonaAgent
+        self.yona_agent = YonaAgent(openai_api_key=self.openai_api_key)
+        
+        # Initialize client
+        self.client = None
+        
+        # Enhanced features
+        self.thread_cache = {}  # Map of sender_id -> thread_id
+        self.message_buffer = []  # Buffer for messages that couldn't be sent
+        self.mention_buffer = ""  # Buffer for aggregating mention fragments
+        
+        logger.info(f"YonaCoralAgent initialized with agent ID: {self.agent_id}")
+    
+    async def connect(self):
+        """
+        Connect to the Coral server.
+        
+        Returns:
+            bool: True if connection was successful, False otherwise
+        """
+        try:
+            # Configure connection parameters
+            params = {
+                "waitForAgents": 2,  # Wait for both agents to be connected
+                "agentId": self.agent_id,  # Use yona_agent as the agent ID
+                "agentDescription": "Yona agent for creating songs and other creative content"  # Description of capabilities
+            }
+            
+            # Encode parameters and create the full URL
+            query_string = urllib.parse.urlencode(params)
+            mcp_server_url = f"{self.server_url}?{query_string}"
+            
+            logger.info(f"Connecting to Coral server at {mcp_server_url}")
+            
+            # Connect to the server
+            self.client = MultiServerMCPClient(
+                connections={
+                    "coral": {
+                        "transport": "sse",
+                        "url": mcp_server_url,
+                        "timeout": 300,
+                        "sse_read_timeout": 300,
+                    }
+                }
+            )
+            await self.client.__aenter__()
+            logger.info(f"Connected to Coral server at {mcp_server_url}")
+            
+            # Start the heartbeat task
+            asyncio.create_task(self.heartbeat())
+            
+            # Start the thread discovery task
+            asyncio.create_task(self.discover_threads())
+            
+            return True
+        except Exception as e:
+            logger.error(f"Connection error: {e}")
+            return False
+    
+    async def disconnect(self):
+        """
+        Disconnect from the Coral server.
+        """
+        if self.client:
+            await self.client.__aexit__(None, None, None)
+            logger.info("Disconnected from Coral server")
+    
+    async def heartbeat(self):
+        """
+        Send periodic heartbeats to keep the connection alive.
+        """
+        while True:
+            try:
+                await asyncio.sleep(60)  # Send heartbeat every 60 seconds
+                if self.client:
+                    tools = self.client.get_tools()
+                    list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+                    await list_agents_tool.ainvoke({"includeDetails": True})
+                    logger.debug("Heartbeat sent")
+            except Exception as e:
+                logger.error(f"Heartbeat error: {e}")
+    
+    async def discover_threads(self):
+        """
+        Periodically discover threads and process buffered messages.
+        """
+        while True:
+            try:
+                # Sleep for a while
+                await asyncio.sleep(60)
+                
+                # List agents to see if Team Angus is connected
+                agents = await self.list_agents()
+                angus_agent = next((a for a in agents if a.get("agentId") == "angus_agent"), None)
+                
+                if angus_agent:
+                    # Create a thread if we don't have one
+                    if "angus_agent" not in self.thread_cache:
+                        thread_id = await self.create_thread()
+                        if thread_id:
+                            self.thread_cache["angus_agent"] = thread_id
+                            
+                            # Send any buffered messages
+                            for msg in self.message_buffer:
+                                await self.send_response(None, thread_id, msg["function_name"], 
+                                                        msg["result"], msg["original_message"])
+                            self.message_buffer = []
+            except Exception as e:
+                logger.error(f"Error in thread discovery: {e}")
+    
+    async def list_agents(self):
+        """
+        List all connected agents.
+        
+        Returns:
+            list: List of connected agents
+        """
+        try:
+            tools = self.client.get_tools()
+            list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+            result = await list_agents_tool.ainvoke({"includeDetails": True})
+            logger.info(f"Connected agents: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Error listing agents: {e}")
+            return []
+    
+    async def create_thread(self, participants=None):
+        """
+        Create a new thread for communication.
+        
+        Args:
+            participants: List of participant IDs (default: [self.agent_id, "angus_agent"])
+            
+        Returns:
+            str: Thread ID or None if creation failed
+        """
+        if participants is None:
+            participants = [self.agent_id, "angus_agent"]
+        
+        try:
+            tools = self.client.get_tools()
+            create_thread_tool = [t for t in tools if t.name == "create_thread"][0]
+            result = await create_thread_tool.ainvoke({
+                "threadName": f"Yona Thread {uuid.uuid4()}",
+                "participantIds": participants
+            })
+            
+            # Handle both string and dictionary results
+            if isinstance(result, dict):
+                thread_id = result.get("threadId")
+            elif isinstance(result, str):
+                # Try to parse the string as JSON
+                try:
+                    thread_data = json.loads(result)
+                    thread_id = thread_data.get("threadId")
+                except json.JSONDecodeError:
+                    # If it's not valid JSON, use the string itself as the thread ID
+                    thread_id = result
+            else:
+                thread_id = None
+            
+            if thread_id:
+                logger.info(f"Created new thread: {thread_id}")
+            else:
+                logger.warning("Failed to extract thread ID from result")
+            
+            return thread_id
+        except Exception as e:
+            logger.error(f"Failed to create new thread: {e}")
+            return None
+    
+    async def wait_for_mentions(self, timeout_ms=30000):
+        """
+        Wait for mentions from other agents.
+        
+        Args:
+            timeout_ms: Timeout in milliseconds (default: 30000)
+            
+        Returns:
+            list: List of mentions
+        """
+        try:
+            tools = self.client.get_tools()
+            wait_for_mentions_tool = [t for t in tools if t.name == "wait_for_mentions"][0]
+            mentions = await wait_for_mentions_tool.ainvoke({"timeoutMs": timeout_ms})
+            
+            if mentions:
+                logger.info(f"Received {len(mentions)} mentions")
+                
+                # Log detailed information about the mentions for debugging
+                logger.debug(f"Mentions type: {type(mentions)}")
+                if isinstance(mentions, list) and len(mentions) > 0:
+                    logger.debug(f"First mention type: {type(mentions[0])}")
+                    logger.debug(f"First mention content: {mentions[0]}")
+                
+                # Try to aggregate fragmented mentions
+                if all(isinstance(m, str) and len(m.strip()) <= 1 for m in mentions):
+                    # These might be fragments of a single message
+                    self.mention_buffer += "".join(mentions)
+                    logger.debug(f"Aggregated mention buffer: {self.mention_buffer}")
+                    
+                    # Try to parse the buffer as JSON
+                    try:
+                        message = json.loads(self.mention_buffer)
+                        logger.info(f"Successfully parsed aggregated mentions: {message}")
+                        valid_mentions = [self.mention_buffer]
+                        self.mention_buffer = ""  # Clear the buffer
+                    except json.JSONDecodeError:
+                        # Not valid JSON yet, keep buffering
+                        logger.debug("Mention buffer not yet valid JSON")
+                        valid_mentions = []
+                else:
+                    # Filter out single-character mentions that are likely not valid JSON
+                    valid_mentions = []
+                    for mention in mentions:
+                        if isinstance(mention, str) and len(mention.strip()) <= 1:
+                            logger.debug(f"Skipping single-character mention: '{mention}'")
+                            continue
+                        valid_mentions.append(mention)
+                
+                if valid_mentions:
+                    logger.info(f"Processing {len(valid_mentions)} valid mentions")
+                    # Process each valid mention
+                    for mention in valid_mentions:
+                        await self.process_mention(mention)
+                else:
+                    logger.debug("No valid mentions to process")
+                
+                return valid_mentions
+            else:
+                logger.debug("No mentions received within timeout")
+                
+                return []
+        except Exception as e:
+            logger.error(f"Error waiting for mentions: {e}")
+            return []
+    
+    async def process_mention(self, mention):
+        """
+        Process a mention from another agent.
+        
+        Args:
+            mention: Mention object from the Coral server
+        """
+        try:
+            # Log the mention type and content for debugging
+            logger.debug(f"Mention type: {type(mention)}")
+            logger.debug(f"Mention content: {mention}")
+            
+            # Extract content based on mention type
+            if isinstance(mention, str):
+                # If mention is a string, it's likely already the content
+                content = mention
+                # We'll need to extract threadId from elsewhere or use a default
+                thread_id = None  # This will need to be handled
+            elif isinstance(mention, dict):
+                # If mention is a dictionary, extract content and threadId
+                content = mention.get("content", "{}")
+                thread_id = mention.get("threadId")
+            else:
+                # Unexpected type
+                logger.error(f"Unexpected mention type: {type(mention)}")
+                return
+            
+            # Try to parse the content as JSON
+            try:
+                message = json.loads(content)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON in mention: {content}")
+                await self.send_error(mention, thread_id, "unknown", "Invalid JSON in message", None)
+                return
+            
+            logger.info(f"Processing mention: {message}")
+            
+            # Process the message based on its type
+            if message.get("type") == "function_call":
+                function_name = message.get("function")
+                arguments = message.get("arguments", {})
+                
+                # Cache the thread ID for this sender
+                sender_id = message.get("metadata", {}).get("sender")
+                if sender_id and thread_id:
+                    self.thread_cache[sender_id] = thread_id
+                
+                # Handle different functions
+                if function_name == "create_song":
+                    prompt = arguments.get("prompt", "")
+                    result = self.create_song(prompt)
+                    await self.send_response(mention, thread_id, function_name, result, message)
+                else:
+                    # Unknown function
+                    error_message = f"Unknown function: {function_name}"
+                    await self.send_error(mention, thread_id, function_name, error_message, message)
+            else:
+                # Not a function call
+                logger.warning(f"Received message is not a function call: {message}")
+        except Exception as e:
+            # Other errors
+            logger.error(f"Error processing mention: {e}")
+            await self.send_error(mention, None, "unknown", f"Error processing message: {str(e)}", None)
+    
+    async def send_response(self, mention, thread_id, function_name, result, original_message):
+        """
+        Send a response to a function call.
+        
+        Args:
+            mention: Mention object from the Coral server
+            thread_id: Thread ID to send the response to
+            function_name: Name of the function that was called
+            result: Result of the function call
+            original_message: Original message from the caller
+        """
+        try:
+            # Create response message
+            response = {
+                "type": "function_response",
+                "function": function_name,
+                "result": result,
+                "metadata": {
+                    "sender": self.agent_id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "correlation_id": original_message.get("metadata", {}).get("message_id")
+                }
+            }
+            
+            # Get sender ID for thread caching
+            sender_id = original_message.get("metadata", {}).get("sender")
+            
+            # If thread_id is None, try to extract it from the mention if it's a dictionary
+            if thread_id is None and isinstance(mention, dict):
+                thread_id = mention.get("threadId")
+            
+            # If thread_id is still None, check the thread cache
+            if thread_id is None and sender_id and sender_id in self.thread_cache:
+                thread_id = self.thread_cache[sender_id]
+                logger.info(f"Using cached thread ID for {sender_id}: {thread_id}")
+            
+            # If we still don't have a thread ID, create a new thread
+            if thread_id is None:
+                logger.warning("No thread ID available. Creating a new thread.")
+                thread_id = await self.create_thread()
+                
+                # Cache the thread ID for this sender
+                if thread_id and sender_id:
+                    self.thread_cache[sender_id] = thread_id
+            
+            # If we still don't have a thread ID, buffer the message
+            if thread_id is None:
+                logger.warning(f"Failed to create a thread. Buffering message for later delivery: {function_name}")
+                self.message_buffer.append({
+                    "function_name": function_name,
+                    "result": result,
+                    "original_message": original_message
+                })
+                return
+            
+            # Send the response
+            tools = self.client.get_tools()
+            send_message_tool = [t for t in tools if t.name == "send_message"][0]
+            await send_message_tool.ainvoke({
+                "threadId": thread_id,
+                "content": json.dumps(response),
+                "mentions": [sender_id] if sender_id else ["angus_agent"]
+            })
+            
+            logger.info(f"Sent response for function: {function_name}")
+        except Exception as e:
+            logger.error(f"Error sending response: {e}")
+    
+    async def send_error(self, mention, thread_id, function_name, error_message, original_message):
+        """
+        Send an error response.
+        
+        Args:
+            mention: Mention object from the Coral server
+            thread_id: Thread ID to send the error to
+            function_name: Name of the function that was called
+            error_message: Error message
+            original_message: Original message from the caller
+        """
+        try:
+            # Create error message
+            error = {
+                "type": "error",
+                "function": function_name,
+                "error": error_message,
+                "metadata": {
+                    "sender": self.agent_id,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "correlation_id": original_message.get("metadata", {}).get("message_id") if original_message else None
+                }
+            }
+            
+            # Get sender ID for thread caching
+            sender_id = original_message.get("metadata", {}).get("sender") if original_message else None
+            
+            # If thread_id is None, try to extract it from the mention if it's a dictionary
+            if thread_id is None and isinstance(mention, dict):
+                thread_id = mention.get("threadId")
+            
+            # If thread_id is still None, check the thread cache
+            if thread_id is None and sender_id and sender_id in self.thread_cache:
+                thread_id = self.thread_cache[sender_id]
+                logger.info(f"Using cached thread ID for {sender_id}: {thread_id}")
+            
+            # If we still don't have a thread ID, create a new thread
+            if thread_id is None:
+                logger.warning("No thread ID available. Creating a new thread.")
+                thread_id = await self.create_thread()
+                
+                # Cache the thread ID for this sender
+                if thread_id and sender_id:
+                    self.thread_cache[sender_id] = thread_id
+            
+            # If we still don't have a thread ID, buffer the message
+            if thread_id is None:
+                logger.warning(f"Failed to create a thread. Buffering error message for later delivery: {function_name}")
+                self.message_buffer.append({
+                    "function_name": function_name,
+                    "result": {"error": error_message, "status": "failed"},
+                    "original_message": original_message
+                })
+                return
+            
+            # Send the error
+            tools = self.client.get_tools()
+            send_message_tool = [t for t in tools if t.name == "send_message"][0]
+            await send_message_tool.ainvoke({
+                "threadId": thread_id,
+                "content": json.dumps(error),
+                "mentions": [sender_id] if sender_id else ["angus_agent"]
+            })
+            
+            logger.info(f"Sent error for function: {function_name}")
+        except Exception as e:
+            logger.error(f"Error sending error response: {e}")
+    
+    def create_song(self, prompt):
+        """
+        Create a song based on a prompt.
+        
+        Args:
+            prompt: Prompt for the song
+            
+        Returns:
+            dict: Song data
+        """
+        logger.info(f"Creating song with prompt: {prompt}")
+        
+        try:
+            # Generate a song concept
+            concept = self.yona_agent.generate_song_concept(prompt)
+            
+            # Generate lyrics
+            lyrics = self.yona_agent.generate_lyrics(concept)
+            
+            # Create the song
+            song_data = self.yona_agent.create_song(
+                title=concept.get('title'),
+                lyrics=lyrics,
+                style=concept.get('style_tags'),
+                negative_tags=concept.get('negative_tags'),
+                make_instrumental=concept.get('make_instrumental', False),
+                mv=concept.get('mv_type', 'sonic-v4'),
+                gpt_description_prompt=concept.get('description'),
+                voice_gender="female"  # Hard-coded as female
+            )
+            
+            # Extract relevant data for the response
+            result = {
+                "title": song_data.get('title'),
+                "audio_url": song_data.get('audio_url'),
+                "video_url": song_data.get('video_url'),
+                "image_url": song_data.get('image_url'),
+                "lyrics": song_data.get('lyrics'),
+                "created_at": datetime.utcnow().isoformat()
+            }
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error creating song: {e}")
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
+
+async def main():
+    """
+    Main function.
+    """
+    # Parse command-line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description='Yona Coral Agent')
+    parser.add_argument('--server-url', type=str, 
+                        default="http://coral.pushcollective.club:5555/devmode/exampleApplication/privkey/session1/sse",
+                        help='URL of the Coral server')
+    parser.add_argument('--agent-id', type=str, default="yona_agent",
+                        help='ID to use for this agent')
+    args = parser.parse_args()
+    
+    # Create the Yona Coral agent
+    agent = YonaCoralAgent(
+        server_url=args.server_url,
+        agent_id=args.agent_id
+    )
+    
+    # Connect to the server
+    if not await agent.connect():
+        logger.error("Failed to connect to the server")
+        return
+    
+    try:
+        # List connected agents
+        agents = await agent.list_agents()
+        
+        # Main loop: wait for mentions and process them
+        while True:
+            await agent.wait_for_mentions(30000)  # 30 seconds timeout
+            await asyncio.sleep(1)  # Small delay to prevent tight loop
+    
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+    finally:
+        # Disconnect from the server
+        await agent.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())
