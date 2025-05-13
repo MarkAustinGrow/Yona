@@ -184,6 +184,14 @@ class YonaCoralAgent:
             
             if mentions:
                 logger.info(f"Received {len(mentions)} mentions")
+                
+                # Log detailed information about the mentions for debugging
+                logger.debug(f"Mentions type: {type(mentions)}")
+                if isinstance(mentions, list) and len(mentions) > 0:
+                    logger.debug(f"First mention type: {type(mentions[0])}")
+                    logger.debug(f"First mention content: {mentions[0]}")
+                
+                # Process each mention
                 for mention in mentions:
                     await self.process_mention(mention)
             else:
@@ -202,13 +210,36 @@ class YonaCoralAgent:
             mention: Mention object from the Coral server
         """
         try:
-            # Extract content and parse JSON
-            content = mention.get("content", "{}")
-            message = json.loads(content)
+            # Log the mention type and content for debugging
+            logger.debug(f"Mention type: {type(mention)}")
+            logger.debug(f"Mention content: {mention}")
+            
+            # Extract content based on mention type
+            if isinstance(mention, str):
+                # If mention is a string, it's likely already the content
+                content = mention
+                # We'll need to extract threadId from elsewhere or use a default
+                thread_id = None  # This will need to be handled
+            elif isinstance(mention, dict):
+                # If mention is a dictionary, extract content and threadId
+                content = mention.get("content", "{}")
+                thread_id = mention.get("threadId")
+            else:
+                # Unexpected type
+                logger.error(f"Unexpected mention type: {type(mention)}")
+                return
+            
+            # Try to parse the content as JSON
+            try:
+                message = json.loads(content)
+            except json.JSONDecodeError:
+                logger.error(f"Invalid JSON in mention: {content}")
+                await self.send_error(mention, thread_id, "unknown", "Invalid JSON in message", None)
+                return
             
             logger.info(f"Processing mention: {message}")
             
-            # Check if it's a function call
+            # Process the message based on its type
             if message.get("type") == "function_call":
                 function_name = message.get("function")
                 arguments = message.get("arguments", {})
@@ -217,29 +248,26 @@ class YonaCoralAgent:
                 if function_name == "create_song":
                     prompt = arguments.get("prompt", "")
                     result = self.create_song(prompt)
-                    await self.send_response(mention, function_name, result, message)
+                    await self.send_response(mention, thread_id, function_name, result, message)
                 else:
                     # Unknown function
                     error_message = f"Unknown function: {function_name}"
-                    await self.send_error(mention, function_name, error_message, message)
+                    await self.send_error(mention, thread_id, function_name, error_message, message)
             else:
                 # Not a function call
                 logger.warning(f"Received message is not a function call: {message}")
-        except json.JSONDecodeError:
-            # Invalid JSON
-            logger.error(f"Invalid JSON in mention: {mention.get('content')}")
-            await self.send_error(mention, "unknown", "Invalid JSON in message", None)
         except Exception as e:
             # Other errors
             logger.error(f"Error processing mention: {e}")
-            await self.send_error(mention, "unknown", f"Error processing message: {str(e)}", None)
+            await self.send_error(mention, None, "unknown", f"Error processing message: {str(e)}", None)
     
-    async def send_response(self, mention, function_name, result, original_message):
+    async def send_response(self, mention, thread_id, function_name, result, original_message):
         """
         Send a response to a function call.
         
         Args:
             mention: Mention object from the Coral server
+            thread_id: Thread ID to send the response to
             function_name: Name of the function that was called
             result: Result of the function call
             original_message: Original message from the caller
@@ -257,11 +285,32 @@ class YonaCoralAgent:
                 }
             }
             
+            # If thread_id is None, try to extract it from the mention if it's a dictionary
+            if thread_id is None and isinstance(mention, dict):
+                thread_id = mention.get("threadId")
+            
+            # If we still don't have a thread ID, we need to handle this case
+            if thread_id is None:
+                logger.warning("No thread ID available. Cannot send response.")
+                # Try to create a new thread or use a default thread
+                try:
+                    tools = self.client.get_tools()
+                    create_thread_tool = [t for t in tools if t.name == "create_thread"][0]
+                    result = await create_thread_tool.ainvoke({
+                        "threadName": f"Yona Response Thread {uuid.uuid4()}",
+                        "participantIds": [self.agent_id, "angus_agent"]  # Assuming Angus is the target
+                    })
+                    thread_id = result.get("threadId")
+                    logger.info(f"Created new thread for response: {thread_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create new thread: {e}")
+                    return
+            
             # Send the response
             tools = self.client.get_tools()
             send_message_tool = [t for t in tools if t.name == "send_message"][0]
             await send_message_tool.ainvoke({
-                "threadId": mention.get("threadId"),
+                "threadId": thread_id,
                 "content": json.dumps(response),
                 "mentions": [original_message.get("metadata", {}).get("sender")]
             })
@@ -270,12 +319,13 @@ class YonaCoralAgent:
         except Exception as e:
             logger.error(f"Error sending response: {e}")
     
-    async def send_error(self, mention, function_name, error_message, original_message):
+    async def send_error(self, mention, thread_id, function_name, error_message, original_message):
         """
         Send an error response.
         
         Args:
             mention: Mention object from the Coral server
+            thread_id: Thread ID to send the error to
             function_name: Name of the function that was called
             error_message: Error message
             original_message: Original message from the caller
@@ -293,11 +343,32 @@ class YonaCoralAgent:
                 }
             }
             
+            # If thread_id is None, try to extract it from the mention if it's a dictionary
+            if thread_id is None and isinstance(mention, dict):
+                thread_id = mention.get("threadId")
+            
+            # If we still don't have a thread ID, we need to handle this case
+            if thread_id is None:
+                logger.warning("No thread ID available. Cannot send error response.")
+                # Try to create a new thread or use a default thread
+                try:
+                    tools = self.client.get_tools()
+                    create_thread_tool = [t for t in tools if t.name == "create_thread"][0]
+                    result = await create_thread_tool.ainvoke({
+                        "threadName": f"Yona Error Thread {uuid.uuid4()}",
+                        "participantIds": [self.agent_id, "angus_agent"]  # Assuming Angus is the target
+                    })
+                    thread_id = result.get("threadId")
+                    logger.info(f"Created new thread for error response: {thread_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create new thread: {e}")
+                    return
+            
             # Send the error
             tools = self.client.get_tools()
             send_message_tool = [t for t in tools if t.name == "send_message"][0]
             await send_message_tool.ainvoke({
-                "threadId": mention.get("threadId"),
+                "threadId": thread_id,
                 "content": json.dumps(error),
                 "mentions": [original_message.get("metadata", {}).get("sender") if original_message else "angus_agent"]
             })

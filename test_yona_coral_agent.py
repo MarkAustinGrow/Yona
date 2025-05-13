@@ -240,13 +240,30 @@ class AngusSimulator:
             
             # Process the first mention
             mention = mentions[0]
+            
+            # Log the mention type and content for debugging
+            logger.debug(f"Mention type: {type(mention)}")
+            logger.debug(f"Mention content: {mention}")
+            
             try:
-                content = mention.get("content", "{}")
+                # Extract content based on mention type
+                if isinstance(mention, str):
+                    # If mention is a string, it's likely already the content
+                    content = mention
+                elif isinstance(mention, dict):
+                    # If mention is a dictionary, extract content
+                    content = mention.get("content", "{}")
+                else:
+                    # Unexpected type
+                    logger.error(f"Unexpected mention type: {type(mention)}")
+                    return None
+                
+                # Parse the content as JSON
                 message = json.loads(content)
                 logger.info(f"Received response: {message}")
                 return message
             except json.JSONDecodeError:
-                logger.error(f"Invalid JSON in response: {content}")
+                logger.error(f"Invalid JSON in response: {mention if isinstance(mention, str) else mention.get('content')}")
                 return None
         except Exception as e:
             logger.error(f"Error waiting for response: {e}")
