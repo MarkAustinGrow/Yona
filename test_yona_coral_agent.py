@@ -127,9 +127,9 @@ class AngusSimulator:
             try:
                 await asyncio.sleep(60)  # Send heartbeat every 60 seconds
                 if self.client:
-                    await self.client.connections["coral"].invoke_tool("list_agents", {
-                        "includeDetails": True
-                    })
+                    tools = self.client.get_tools()
+                    list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+                    await list_agents_tool.ainvoke({"includeDetails": True})
                     logger.debug("Heartbeat sent")
             except Exception as e:
                 logger.error(f"Heartbeat error: {e}")
@@ -142,9 +142,9 @@ class AngusSimulator:
             list: List of connected agents
         """
         try:
-            result = await self.client.connections["coral"].invoke_tool("list_agents", {
-                "includeDetails": True
-            })
+            tools = self.client.get_tools()
+            list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+            result = await list_agents_tool.ainvoke({"includeDetails": True})
             logger.info(f"Connected agents: {result}")
             return result
         except Exception as e:
@@ -159,7 +159,9 @@ class AngusSimulator:
             str: Thread ID
         """
         try:
-            result = await self.client.connections["coral"].invoke_tool("create_thread", {
+            tools = self.client.get_tools()
+            create_thread_tool = [t for t in tools if t.name == "create_thread"][0]
+            result = await create_thread_tool.ainvoke({
                 "threadName": f"Test Thread {uuid.uuid4()}",
                 "participantIds": [self.agent_id, self.target_agent_id]
             })
@@ -200,7 +202,9 @@ class AngusSimulator:
             }
             
             # Send the message
-            await self.client.connections["coral"].invoke_tool("send_message", {
+            tools = self.client.get_tools()
+            send_message_tool = [t for t in tools if t.name == "send_message"][0]
+            await send_message_tool.ainvoke({
                 "threadId": self.thread_id,
                 "content": json.dumps(message),
                 "mentions": [self.target_agent_id]
@@ -226,9 +230,9 @@ class AngusSimulator:
             dict: Response from the target agent
         """
         try:
-            mentions = await self.client.connections["coral"].invoke_tool("wait_for_mentions", {
-                "timeoutMs": timeout_ms
-            })
+            tools = self.client.get_tools()
+            wait_for_mentions_tool = [t for t in tools if t.name == "wait_for_mentions"][0]
+            mentions = await wait_for_mentions_tool.ainvoke({"timeoutMs": timeout_ms})
             
             if not mentions:
                 logger.warning("No response received within timeout")

@@ -143,9 +143,9 @@ class YonaCoralAgent:
             try:
                 await asyncio.sleep(60)  # Send heartbeat every 60 seconds
                 if self.client:
-                    await self.client.connections["coral"].invoke_tool("list_agents", {
-                        "includeDetails": True
-                    })
+                    tools = self.client.get_tools()
+                    list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+                    await list_agents_tool.ainvoke({"includeDetails": True})
                     logger.debug("Heartbeat sent")
             except Exception as e:
                 logger.error(f"Heartbeat error: {e}")
@@ -158,9 +158,9 @@ class YonaCoralAgent:
             list: List of connected agents
         """
         try:
-            result = await self.client.connections["coral"].invoke_tool("list_agents", {
-                "includeDetails": True
-            })
+            tools = self.client.get_tools()
+            list_agents_tool = [t for t in tools if t.name == "list_agents"][0]
+            result = await list_agents_tool.ainvoke({"includeDetails": True})
             logger.info(f"Connected agents: {result}")
             return result
         except Exception as e:
@@ -178,9 +178,9 @@ class YonaCoralAgent:
             list: List of mentions
         """
         try:
-            mentions = await self.client.connections["coral"].invoke_tool("wait_for_mentions", {
-                "timeoutMs": timeout_ms
-            })
+            tools = self.client.get_tools()
+            wait_for_mentions_tool = [t for t in tools if t.name == "wait_for_mentions"][0]
+            mentions = await wait_for_mentions_tool.ainvoke({"timeoutMs": timeout_ms})
             
             if mentions:
                 logger.info(f"Received {len(mentions)} mentions")
@@ -258,7 +258,9 @@ class YonaCoralAgent:
             }
             
             # Send the response
-            await self.client.connections["coral"].invoke_tool("send_message", {
+            tools = self.client.get_tools()
+            send_message_tool = [t for t in tools if t.name == "send_message"][0]
+            await send_message_tool.ainvoke({
                 "threadId": mention.get("threadId"),
                 "content": json.dumps(response),
                 "mentions": [original_message.get("metadata", {}).get("sender")]
@@ -292,7 +294,9 @@ class YonaCoralAgent:
             }
             
             # Send the error
-            await self.client.connections["coral"].invoke_tool("send_message", {
+            tools = self.client.get_tools()
+            send_message_tool = [t for t in tools if t.name == "send_message"][0]
+            await send_message_tool.ainvoke({
                 "threadId": mention.get("threadId"),
                 "content": json.dumps(error),
                 "mentions": [original_message.get("metadata", {}).get("sender") if original_message else "angus_agent"]
