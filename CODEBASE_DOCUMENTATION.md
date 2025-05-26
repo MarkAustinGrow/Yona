@@ -5,12 +5,11 @@
 The project is structured as follows:
 
 - `src/`: Main source code directory
-  - `api/`: API endpoints for MCP implementation
   - `config/`: Configuration files
   - `examples/`: Example scripts
-  - `identity/`: DID management for MCP implementation
+  - `identity/`: DID management for authentication
   - `migrations/`: Database migration scripts
-  - `protocol/`: Protocol handling for MCP implementation
+  - `protocol/`: Protocol handling for API capabilities
   - Multiple Python modules for different functionalities
 - `lyrics/`: Directory containing lyrics files for song creation
 - `tests/`: Test files for the project
@@ -130,7 +129,7 @@ Based on the code analysis, the Supabase database includes the following tables:
 | `negative_tags` | text | Tags to avoid in generation |
 | `duration` | float | Duration of the song in seconds |
 | `params_used` | jsonb | JSON object with all parameters used |
-| `processor_did` | text | DID of the agent that processed the song (for MCP) |
+| `processor_did` | text | DID of the agent that processed the song |
 | `original_song_id` | uuid | Reference to the original song (for songs created from feedback) |
 | `feedback_id` | uuid | Reference to the feedback that prompted this song |
 
@@ -228,7 +227,7 @@ The `modify_parameters_with_openai()` function:
 
 ```python
 class YonaAgent:
-    def __init__(self, openai_api_key=None, simulation_mode=False, did_domain="yona.ai", private_key_path=None)
+    def __init__(self, openai_api_key=None, did_domain="yona.ai", private_key_path=None)
     def generate_song_concept(self, prompt)
     def generate_lyrics(self, concept)
     def create_song(self, title, lyrics, style=None, negative_tags=None, make_instrumental=False,
@@ -247,7 +246,7 @@ class YonaAgent:
 
 ```python
 class DIDManager:
-    def __init__(self, did_domain="yona.ai", private_key_path=None, simulation_mode=False)
+    def __init__(self, did_domain="yona.ai", private_key_path=None)
     def _generate_keys()
     def _load_private_key(private_key_path)
     def _create_did_document()
@@ -275,7 +274,7 @@ class CapabilityDocument:
 
 ```python
 class YonaAPI:
-    def __init__(self, did_domain="yona.ai", private_key_path=None, simulation_mode=False)
+    def __init__(self, did_domain="yona.ai", private_key_path=None)
     def _register_routes()
     def get_capabilities()
     def get_did_document()
@@ -287,7 +286,7 @@ class YonaAPI:
 
 ```python
 class MusicAPI:
-    def __init__(self, api_key=None, base_url=None, simulation_mode=False)
+    def __init__(self, api_key=None, base_url=None)
     def create_song(self, prompt, title=None, style=None, negative_tags=None, make_instrumental=False, 
                    mv='sonic-v4', gpt_description_prompt=None, voice_gender='female')
     def check_song_status(self, task_id)
@@ -302,7 +301,7 @@ class MusicAPI:
 
 ```python
 class SupabaseClient:
-    def __init__(self, url=None, key=None, simulation_mode=False)
+    def __init__(self, url=None, key=None)
     def store_song_data(self, song_data)
     def get_song_by_id(self, song_id)
     def list_songs(self, limit=10, offset=0)
@@ -335,7 +334,7 @@ Parameters:
 
 ### run_api_server.py
 
-Runs the API server for the MCP implementation.
+Runs the API server.
 
 Parameters:
 - `--host`: Host to bind to (default: '127.0.0.1')
@@ -343,7 +342,6 @@ Parameters:
 - `--debug`: Run in debug mode (flag)
 - `--did-domain`: Domain for the did:web identifier (default: 'yona.ai')
 - `--private-key`: Path to a file containing a private key
-- `--simulation`: Run in simulation mode (flag)
 
 Example usage:
 ```bash
@@ -352,21 +350,6 @@ python run_api_server.py
 
 # Run with custom host and port
 python run_api_server.py --host 0.0.0.0 --port 8000
-
-```
-
-### test_mcp.py
-
-Tests the MCP implementation without running the full API server.
-
-Parameters:
-- `--simulation`: Run in simulation mode (flag)
-
-Example usage:
-```bash
-# Test the MCP implementation
-python test_mcp.py
-
 ```
 
 ### generate_song.py
@@ -413,7 +396,6 @@ Lists the songs stored in the Supabase database.
 Provides a command-line interface for interacting with Yona in an agentic way.
 
 Parameters:
-- `--simulation`: Run in simulation mode without making API calls (flag)
 - `--interactive`: Run in interactive mode, allowing multiple requests (flag)
 - `--request`: Process a single request and exit (e.g., "Create a song about friendship")
 
@@ -424,7 +406,6 @@ python src/yona_cli.py --interactive
 
 # Single request mode
 python src/yona_cli.py --request "Create a song about summer"
-
 ```
 
 ### create_song_from_feedback.py
@@ -434,13 +415,11 @@ Creates a new song based on feedback for an existing song.
 Parameters:
 - `--song-id`: ID of the original song (required)
 - `--feedback-id`: ID of the feedback to process (required)
-- `--simulation`: Run in simulation mode (flag)
 
 Example usage:
 ```bash
 # Process specific feedback
 python src/create_song_from_feedback.py --song-id 123e4567-e89b-12d3-a456-426614174000 --feedback-id 123e4567-e89b-12d3-a456-426614174001
-
 ```
 
 ### continuous_feedback_processor.py
@@ -471,11 +450,6 @@ run_feedback_processor.bat
 3. **Supabase Integration**:
    - Used for storing song data, including metadata and generated URLs
    - Configured with SUPABASE_URL and SUPABASE_KEY from environment variables
-
-4. **MCP Integration**:
-   - Provides decentralized identity and capability document generation
-   - Enables secure, authenticated communication between agents
-   - Implemented using the Model Context Protocol framework
 
 ## 9. API Options
 
@@ -576,17 +550,15 @@ This ensures continuous operation even when one API is unavailable, making the s
 4. YonaAgent returns a response to the user with relevant information
 5. In interactive mode, the process repeats for each user request
 
-### MCP-Enabled Feedback Processing Workflow
+### Feedback Processing Workflow
 1. User runs the continuous_feedback_processor.py script or create_song_from_feedback.py
 2. YonaAgent is initialized with DID capabilities (did_domain="yona.ai")
-3. The agent's DID is shared with MusicAPI for authenticated requests
-4. When processing feedback:
+3. When processing feedback:
    - Original song and feedback are retrieved from Supabase
    - Parameters are modified based on feedback using OpenAI
-   - A new song is created with MusicAPI (with DID-authenticated requests)
+   - A new song is created with MusicAPI
    - The new song is stored in Supabase with the processor's DID
    - The feedback is marked as processed
-5. The processor_did field allows tracking which agent processed each feedback
 
 ### Influence Music Processing Workflow
 1. User runs the continuous_feedback_processor.py script
@@ -621,6 +593,12 @@ This ensures continuous operation even when one API is unavailable, making the s
    - Added missing code for storing song data and marking influence music as processed
    - Added the `check_for_unprocessed_influence_music` function to the main loop
    - This fix enables the system to process influence music records automatically
+
+4. Reversion to NuroAPI branch:
+   - Removed Coral Protocol integration
+   - Simplified the codebase to focus on core song generation functionality
+   - Ensured compatibility with both Sonic API and Nuro API
+   - Updated Docker configuration for cleaner builds
 
 ## 12. Backup Recommendation
 
