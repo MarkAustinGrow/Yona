@@ -20,3 +20,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./logs:/app/logs
+
+  yona-coral-agent:
+    build: .
+    env_file:
+      - .env
+    command: python yona_coral_agent_enhanced.py --server-url http://coral.pushcollective.club:5555/devmode/app/priv/session1/sse --agent-id yona
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    profiles:
+      - coral
